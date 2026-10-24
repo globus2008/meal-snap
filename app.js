@@ -1,8 +1,9 @@
 import { PROVIDERS, ADAPTERS, ProviderError } from './providers.js';
 import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
+import { MEALS, KtError, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, md5 } from './kt.js';
 
-const VERSION = '1.0.4';
+const VERSION = '1.1.0';
 const HISTORY_MAX = 30;
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -20,7 +21,7 @@ const store = {
   },
 };
 
-const settings = Object.assign({ provider: 'gemini', keys: {}, models: {} }, store.get('ms.settings', {}));
+const settings = Object.assign({ provider: 'gemini', keys: {}, models: {}, kt: {} }, store.get('ms.settings', {}));
 const saveSettings = () => store.set('ms.settings', settings);
 const currentKey = () => (settings.keys[settings.provider] || '').trim();
 const currentModel = () => (settings.models[settings.provider] || '').trim() || PROVIDERS[settings.provider].defaultModel;
@@ -241,6 +242,7 @@ function showResult() {
   if (current.thumb) $('#result-thumb').src = current.thumb;
   $('#ai-note').textContent = current.note || '';
   renderItems();
+  renderKt();
   window.scrollTo({ top: 0 });
 }
 
@@ -304,6 +306,111 @@ function wireResult() {
 
   $('#dish').addEventListener('input', (e) => { current.dish = e.target.value; persistCurrent(); });
   $('#new-photo').addEventListener('click', resetComposer);
+}
+
+// ---------- Kalorické tabulky export ----------
+
+const mealName = (id) => t(`kt.meal.${id}`);
+
+function ktSentText(kt) {
+  const d = new Date(`${kt.date}T12:00`);
+  const day = new Intl.DateTimeFormat(getLang() === 'cs' ? 'cs-CZ' : 'en-US', { day: 'numeric', month: 'numeric' }).format(d);
+  return t('kt.sent', { meal: mealName(kt.mealId), date: day });
+}
+
+function ktErrorMessage(err) {
+  return t(`kt.error.${err instanceof KtError ? err.code : 'unknown'}`);
+}
+
+function renderKt() {
+  const ready = ktConfigured(settings.kt);
+  $('#kt-form').hidden = !ready;
+  $('#kt-setup').hidden = ready;
+  const sel = $('#kt-meal');
+  sel.textContent = '';
+  for (const id of MEALS) sel.appendChild(Object.assign(document.createElement('option'), { value: id, textContent: mealName(id) }));
+  // Preselect from the last export, else from the time the meal was analyzed.
+  const pre = current.kt || (({ date, mealId }) => ({ date: isoDate(date), mealId }))(defaultMeal(current.date));
+  $('#kt-date').value = pre.date;
+  sel.value = pre.mealId;
+  if (current.kt) setStatus($('#kt-status'), ktSentText(current.kt), 'ok');
+  else setStatus($('#kt-status'), '');
+}
+
+async function sendToKt() {
+  const date = $('#kt-date').value;
+  const mealId = $('#kt-meal').value;
+  if (!date) { $('#kt-date').focus(); return; }
+  const named = current.items.filter((it) => it.name.trim());
+  if (!named.length) return;
+  // After a partial failure only the unsent items go; a meal already logged asks first (duplicates).
+  let pending = named.filter((it) => !it.ktSent);
+  if (current.kt || !pending.length) {
+    if (!confirm(t('kt.confirmResend'))) return;
+    named.forEach((it) => { delete it.ktSent; });
+    pending = named;
+  }
+
+  const btn = $('#kt-send');
+  const st = $('#kt-status');
+  btn.disabled = true;
+  setStatus(st, t('kt.sending', { n: pending.length }), 'busy');
+  try {
+    const items = pending.map((it) => {
+      const x = itemTotals(it);
+      return { title: `${it.name.trim()} (${fmt(it.grams)} g)`, kcal: x.kcal, protein: x.p, carbs: x.c, fat: x.f };
+    });
+    const results = await ktLog(settings.kt, { date, mealId, items });
+    pending.forEach((it, i) => { if (results[i]?.ok) it.ktSent = true; });
+    const failed = pending.filter((it) => !it.ktSent);
+    if (failed.length) {
+      persistCurrent();
+      setStatus(st, t('kt.partial', { names: failed.map((it) => it.name.trim()).join(', ') }), 'error');
+      return;
+    }
+    current.items.forEach((it) => { delete it.ktSent; });
+    current.kt = { date, mealId, at: new Date().toISOString() };
+    persistCurrent();
+    setStatus(st, ktSentText(current.kt), 'ok');
+    toast(ktSentText(current.kt));
+  } catch (err) {
+    console.error(err);
+    setStatus(st, ktErrorMessage(err), 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function wireKtSettings() {
+  const fill = () => {
+    $('#kt-proxy').value = settings.kt.proxy || '';
+    $('#kt-email').value = settings.kt.email || '';
+    $('#kt-password').value = '';
+    $('#kt-password').placeholder = settings.kt.passwordHash ? t('kt.passwordSaved') : '';
+  };
+  fill();
+  $('#kt-proxy').addEventListener('input', (e) => { settings.kt.proxy = e.target.value.trim(); saveSettings(); });
+  $('#kt-email').addEventListener('input', (e) => { settings.kt.email = e.target.value.trim(); saveSettings(); });
+  // Keep only the hash the site itself sends at login; the password itself is never stored.
+  $('#kt-password').addEventListener('change', (e) => {
+    if (!e.target.value) return;
+    settings.kt.passwordHash = md5(e.target.value);
+    saveSettings();
+    fill();
+  });
+  $('#kt-test').addEventListener('click', async () => {
+    const pw = $('#kt-password');
+    if (pw.value) pw.dispatchEvent(new Event('change'));
+    const st = $('#kt-test-status');
+    setStatus(st, t('kt.testing'), 'busy');
+    try {
+      await ktTest(settings.kt);
+      setStatus(st, t('kt.loginOk'), 'ok');
+    } catch (err) {
+      setStatus(st, ktErrorMessage(err), 'error');
+    }
+  });
+  wireKtSettings.refresh = fill;
 }
 
 // ---------- voice note ----------
@@ -548,6 +655,7 @@ function showView(name) {
     b.setAttribute('aria-selected', String(on));
   });
   if (name === 'history') renderHistory();
+  if (name === 'snap' && current && !$('#result').hidden) renderKt();
   window.scrollTo({ top: 0 });
 }
 
@@ -557,6 +665,7 @@ async function changeLang(code) {
   $('#lang-toggle').textContent = getLang() === 'en' ? 'CS' : 'EN';
   renderProviders();
   renderProviderFields();
+  wireKtSettings.refresh?.();
   if (current && !$('#result').hidden) showResult();
   if ($('#view-history').classList.contains('active')) renderHistory();
 }
@@ -577,6 +686,8 @@ async function init() {
   wireVoice();
   wireHistory();
   wireSettings();
+  wireKtSettings();
+  $('#kt-send').addEventListener('click', sendToKt);
   await changeLang(initialLang());
 
   if (!currentKey()) showView('settings');

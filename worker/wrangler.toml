@@ -1,0 +1,7 @@
+name = "meal-snap-kt"
+main = "kt-proxy.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Origins allowed to call the proxy (comma-separated). Put your GitHub Pages origin here.
+ALLOWED_ORIGINS = "https://globus2008.github.io,http://localhost:8000,http://localhost:3000"

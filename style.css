@@ -124,12 +124,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; color: var(--muted); }
 .note-wrap { margin-bottom: 14px; }
 .note-row { display: flex; gap: 8px; align-items: flex-start; }
-textarea, input[type="text"], input[type="password"], input[type="number"], select {
+textarea, input[type="text"], input[type="password"], input[type="number"], input[type="url"], input[type="email"], input[type="date"], select {
   width: 100%; min-height: 48px; padding: 11px 12px;
   border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
   font-size: 16px; /* prevents iOS zoom */
 }
 textarea { resize: vertical; }
+input[type="date"] { -webkit-appearance: none; appearance: none; text-align: left; }
 .hint { display: block; color: var(--muted); font-size: 13px; margin-top: 6px; }
 .status { min-height: 1.4em; margin: 10px 0 0; color: var(--muted); font-size: 15px; }
 .status.error { color: var(--danger); }
@@ -181,6 +182,12 @@ textarea { resize: vertical; }
 .per100 { width: 100%; }
 
 .row-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.kt-card { margin-bottom: 12px; }
+.kt-title { font-size: 16px; margin: 0; }
+.kt-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 8px; margin-bottom: 10px; }
+.kt-field .label { margin: 0 0 4px; }
+.kt-setup { margin: 0; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.kt-legend { margin: 0 !important; }
 .ai-note { color: var(--muted); font-size: 15px; margin: 8px 2px; }
 .disclaimer { color: var(--muted); font-size: 13px; margin: 0 2px 16px; }
 

@@ -81,6 +81,22 @@
           <button id="copy-all" type="button" class="secondary" data-i18n="result.copyAll">Copy all</button>
         </div>
 
+        <div id="kt-card" class="card field-stack kt-card">
+          <h2 class="kt-title" data-i18n="kt.title">Log to Kalorické tabulky</h2>
+          <div id="kt-form">
+            <div class="kt-row">
+              <label class="kt-field"><span class="label" data-i18n="kt.date">Date</span><input id="kt-date" type="date"></label>
+              <label class="kt-field"><span class="label" data-i18n="kt.meal">Meal</span><select id="kt-meal"></select></label>
+            </div>
+            <button id="kt-send" type="button" class="primary" data-i18n="kt.send">Log to Kalorické tabulky</button>
+            <p id="kt-status" class="status" role="status" aria-live="polite"></p>
+          </div>
+          <p id="kt-setup" class="kt-setup" hidden>
+            <span data-i18n="kt.notConfigured">Connect your Kalorické tabulky account first.</span>
+            <button type="button" class="link" data-goto="settings" data-i18n="kt.openSettings">Set up</button>
+          </p>
+        </div>
+
         <p id="ai-note" class="ai-note"></p>
         <p class="disclaimer" data-i18n="result.disclaimer">Values are AI estimates. Check grams before logging.</p>
         <button id="new-photo" type="button" class="primary" data-i18n="result.newPhoto">New photo</button>
@@ -120,6 +136,19 @@
         <input id="model" type="text" list="model-list" autocomplete="off" autocapitalize="off" spellcheck="false">
         <datalist id="model-list"></datalist>
         <small class="hint" data-i18n="settings.modelHint">Leave the default unless you know what you are doing.</small>
+      </div>
+
+      <div class="card field-stack">
+        <span class="label kt-legend" data-i18n="kt.settingsTitle">Kalorické tabulky</span>
+        <small class="hint" data-i18n-html="kt.settingsHint"></small>
+        <label for="kt-proxy" class="label" data-i18n="kt.proxy">Proxy URL</label>
+        <input id="kt-proxy" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://meal-snap-kt.<you>.workers.dev">
+        <label for="kt-email" class="label" data-i18n="kt.email">E-mail</label>
+        <input id="kt-email" type="email" autocomplete="username" autocapitalize="off" spellcheck="false">
+        <label for="kt-password" class="label" data-i18n="kt.password">Password</label>
+        <input id="kt-password" type="password" autocomplete="current-password">
+        <button id="kt-test" type="button" class="secondary" data-i18n="kt.test">Check login</button>
+        <p id="kt-test-status" class="status" role="status" aria-live="polite"></p>
       </div>
 
       <div class="card field-stack">
