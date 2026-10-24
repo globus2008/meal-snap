@@ -2,7 +2,7 @@ import { PROVIDERS, ADAPTERS, ProviderError } from './providers.js';
 import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k } from './voice.js';
 
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 const HISTORY_MAX = 30;
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -363,18 +363,24 @@ function wireVoice() {
     if (session?.kind === 'rec') return finishRecording();
     if (session?.kind === 'live') { session.stop(); return; }
 
-    if (canLiveDictate()) {
+    // Prefer recording + AI transcription whenever the provider can do it: browser
+    // dictation can listen without ever returning text or an error (seen in Chrome on Windows).
+    if (PROVIDERS[settings.provider].audio && canRecord()) {
+      startRecorder();
+    } else if (canLiveDictate()) {
       const base = note.value.trim();
       let gotText = false;
+      let fellBack = false;
       try {
         const ctl = startDictation({
           lang: getLang(),
           onText: (txt) => { gotText = true; note.value = base ? `${base} ${txt}` : txt; },
-          onEnd: () => { idle(); hint(); },
+          // onend also fires after onerror; don't let it reset a recorder started by the fallback.
+          onEnd: () => { if (!fellBack) { idle(); hint(); } },
           onError: (code) => {
             idle();
             // Speech service unavailable -> fall back to recording + AI transcription.
-            if (!gotText && code !== 'aborted' && code !== 'no-speech' && canRecord()) startRecorder();
+            if (!gotText && code !== 'aborted' && code !== 'no-speech' && canRecord()) { fellBack = true; startRecorder(); }
             else hint();
           },
         });
