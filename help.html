@@ -62,6 +62,12 @@
     }
     toggle.addEventListener('click', () => apply(getLang() === 'en' ? 'cs' : 'en'));
     apply(initialLang());
+    // This page may have come from the previous version's cache: show the new one once it takes over.
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
+      navigator.serviceWorker.getRegistration().then((r) => r?.update()).catch(() => {});
+    }
   </script>
 </body>
 </html>

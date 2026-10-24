@@ -3,7 +3,7 @@ import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
 import { MEALS, KtError, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, md5 } from './kt.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 const HISTORY_MAX = 30;
 const $ = (sel, root = document) => root.querySelector(sel);
 
