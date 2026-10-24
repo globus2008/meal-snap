@@ -2,7 +2,7 @@ import { PROVIDERS, ADAPTERS, ProviderError } from './providers.js';
 import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k } from './voice.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 const HISTORY_MAX = 30;
 const $ = (sel, root = document) => root.querySelector(sel);
 
