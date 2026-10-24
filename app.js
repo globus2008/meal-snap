@@ -2,7 +2,7 @@ import { PROVIDERS, ADAPTERS, ProviderError } from './providers.js';
 import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
 
-const VERSION = '1.0.3';
+const VERSION = '1.0.4';
 const HISTORY_MAX = 30;
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -582,6 +582,13 @@ async function init() {
   if (!currentKey()) showView('settings');
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    // A new worker taking over means a new version was deployed: reload once to show it now
+    // instead of on the next launch, unless the user is in the middle of something.
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      const busy = photo || $('#note').value.trim() || $('#mic').classList.contains('recording') || !$('#result').hidden;
+      if (hadController && !busy && !init.reloaded) { init.reloaded = true; location.reload(); }
+    });
     navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW registration failed', e));
   }
 }

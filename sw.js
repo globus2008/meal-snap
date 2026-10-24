@@ -1,5 +1,5 @@
 // Offline cache for the app shell. Bump CACHE when shipping changes so clients refresh.
-const CACHE = 'meal-snap-v4';
+const CACHE = 'meal-snap-v5';
 const ASSETS = [
   './',
   'index.html',
@@ -20,7 +20,9 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser's HTTP cache so a new version never caches old files.
+  const fresh = ASSETS.map((url) => new Request(url, { cache: 'reload' }));
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(fresh)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
