@@ -70,10 +70,14 @@ export async function startRecording({ maxSeconds = 60, onTick, onAutoStop } = {
 // Decode any recorded audio and re-encode it as 16 kHz mono 16-bit WAV,
 // a format every provider accepts.
 export async function toWav16k(blob) {
-  const AC = window.AudioContext || window.webkitAudioContext;
-  const ctx = new AC();
-  const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
-  ctx.close?.();
+  // Decode with an OfflineAudioContext: a realtime AudioContext is tied to the audio
+  // output device and on desktop Chrome its decodeAudioData can hang without settling.
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const data = await blob.arrayBuffer();
+  const decoded = await new Promise((resolve, reject) => {
+    const p = new OAC(1, 1, 44100).decodeAudioData(data, resolve, reject);
+    p?.catch?.(reject);
+  });
   const rate = 16000;
   const length = Math.max(1, Math.ceil(decoded.duration * rate));
   const off = new OfflineAudioContext(1, length, rate);
@@ -95,4 +99,13 @@ export async function toWav16k(blob) {
     v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
   }
   return new Blob([buf], { type: 'audio/wav' });
+}
+
+// Reject if `promise` hasn't settled within `ms`.
+export function withTimeout(promise, ms, code = 'timeout') {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(code)), ms); }),
+  ]).finally(() => clearTimeout(timer));
 }

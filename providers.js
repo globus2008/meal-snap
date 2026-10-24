@@ -32,7 +32,7 @@ export const PROVIDERS = {
 };
 
 export class ProviderError extends Error {
-  // code: noKey | invalidKey | quota | busy | refused | badResponse | network | noAudio | http
+  // code: noKey | invalidKey | quota | busy | refused | badResponse | network | timeout | noAudio | audio | http
   constructor(code, detail = '') {
     super(detail || code);
     this.code = code;
@@ -95,11 +95,14 @@ ${JSON.stringify(RESULT_SCHEMA)}`;
 
 // ---------- helpers ----------
 
+const REQUEST_TIMEOUT_MS = 90_000;
+
 async function request(url, options) {
   let res;
   try {
-    res = await fetch(url, options);
+    res = await fetch(url, { ...options, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   } catch (e) {
+    if (e.name === 'TimeoutError') throw new ProviderError('timeout');
     throw new ProviderError('network', e.message);
   }
   const text = await res.text();
@@ -280,7 +283,9 @@ const openai = {
   async transcribe({ key, wavBlob, lang }) {
     requireKey(key);
     const form = new FormData();
-    form.append('file', wavBlob, 'note.wav');
+    // wavBlob may also be the raw recording (webm/ogg/mp4) when WAV conversion failed.
+    const ext = { 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'mp4', 'audio/mpeg': 'mp3' }[wavBlob.type.split(';')[0]] || 'wav';
+    form.append('file', wavBlob, `note.${ext}`);
     form.append('model', 'gpt-4o-mini-transcribe');
     if (lang) form.append('language', lang);
     const body = await request(`${OPENAI}/audio/transcriptions`, {

@@ -1,8 +1,8 @@
 import { PROVIDERS, ADAPTERS, ProviderError } from './providers.js';
 import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
-import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k } from './voice.js';
+import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
 
-const VERSION = '1.0.2';
+const VERSION = '1.0.3';
 const HISTORY_MAX = 30;
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -74,7 +74,7 @@ async function copyText(text) {
 function errorMessage(err) {
   const code = err instanceof ProviderError ? err.code : 'unknown';
   const msg = t(`error.${code}`, { provider: PROVIDERS[settings.provider].label });
-  return err.detail && ['http', 'badResponse', 'refused', 'unknown'].includes(code)
+  return err.detail && ['http', 'badResponse', 'refused', 'audio', 'unknown'].includes(code)
     ? `${msg} (${err.detail})`
     : msg;
 }
@@ -347,9 +347,18 @@ function wireVoice() {
     idle();
     statusEl.textContent = t('voice.transcribing');
     try {
-      const wav = await toWav16k(await stop());
+      const raw = await withTimeout(stop(), 5000).catch(() => { throw new ProviderError('audio', 'recorder did not stop'); });
+      let audio;
+      try {
+        audio = await withTimeout(toWav16k(raw), 15000);
+      } catch (e) {
+        console.warn('WAV conversion failed, sending the raw recording', raw.type, e);
+        // OpenAI reads webm/ogg/mp4 directly; Gemini needs the WAV.
+        if (settings.provider !== 'openai') throw new ProviderError('audio', e.message);
+        audio = raw;
+      }
       const text = await ADAPTERS[settings.provider].transcribe({
-        key: currentKey(), model: currentModel(), wavBlob: wav, lang: getLang(),
+        key: currentKey(), model: currentModel(), wavBlob: audio, lang: getLang(),
       });
       if (text) note.value = note.value.trim() ? `${note.value.trim()} ${text}` : text;
       hint();

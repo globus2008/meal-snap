@@ -80,6 +80,8 @@
   "error.refused": "{provider} declined to analyze this photo.",
   "error.badResponse": "The AI returned an unexpected answer. Try again.",
   "error.network": "No connection to {provider}. Check your internet connection.",
+  "error.timeout": "{provider} didn't respond in time. Please try again.",
+  "error.audio": "The recording couldn't be processed.",
   "error.noAudio": "This provider can't transcribe voice.",
   "error.http": "{provider} returned an error.",
   "error.unknown": "Something went wrong.",

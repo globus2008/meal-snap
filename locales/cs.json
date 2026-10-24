@@ -80,6 +80,8 @@
   "error.refused": "{provider} odmítl tuto fotku analyzovat.",
   "error.badResponse": "AI vrátila nečekanou odpověď. Zkuste to znovu.",
   "error.network": "Nepodařilo se spojit s {provider}. Zkontrolujte připojení k internetu.",
+  "error.timeout": "{provider} neodpověděl včas. Zkuste to znovu.",
+  "error.audio": "Nahrávku se nepodařilo zpracovat.",
   "error.noAudio": "Tento poskytovatel neumí přepisovat hlas.",
   "error.http": "{provider} vrátil chybu.",
   "error.unknown": "Něco se pokazilo.",
