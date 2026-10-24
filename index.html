@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Meal Snap</title>
+  <meta name="description" content="Break a meal photo down into ingredients with grams and calories.">
+  <meta name="theme-color" content="#1f8a5b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Meal Snap">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img src="icons/favicon-32.png" alt="" width="24" height="24"><span data-i18n="app.title">Meal Snap</span></div>
+    <button id="lang-toggle" class="chip" type="button" data-i18n-aria="settings.language">CS</button>
+  </header>
+
+  <main>
+    <!-- ===== Snap ===== -->
+    <section id="view-snap" class="view active" aria-labelledby="tab-snap">
+      <div id="key-banner" class="banner" hidden>
+        <span data-i18n="snap.noKey">Add your AI key in Settings first.</span>
+        <button type="button" class="link" data-goto="settings" data-i18n="snap.openSettings">Open settings</button>
+      </div>
+
+      <div id="composer">
+        <label class="photo-drop" id="photo-drop">
+          <input id="photo-input" type="file" accept="image/*" hidden>
+          <img id="photo-preview" alt="" hidden>
+          <span class="photo-empty" id="photo-empty">
+            <svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true"><path fill="currentColor" d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9Zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>
+            <strong data-i18n="snap.takePhoto">Take or choose a photo</strong>
+            <small data-i18n="snap.photoHint">Shoot from above, whole plate in frame.</small>
+          </span>
+        </label>
+
+        <div class="note-wrap">
+          <label for="note" class="label" data-i18n="snap.noteLabel">Note (optional)</label>
+          <div class="note-row">
+            <textarea id="note" rows="2" data-i18n-placeholder="snap.notePlaceholder"></textarea>
+            <button id="mic" type="button" class="icon-btn" data-i18n-aria="snap.dictate">
+              <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+            </button>
+          </div>
+          <small id="voice-status" class="hint" data-i18n="snap.noteHint">Tip: you can also dictate using the microphone on your keyboard.</small>
+        </div>
+
+        <button id="analyze" type="button" class="primary" disabled data-i18n="snap.analyze">Analyze meal</button>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+      </div>
+
+      <div id="result" hidden>
+        <div class="result-head">
+          <img id="result-thumb" alt="" hidden>
+          <div>
+            <input id="dish" class="dish" type="text" aria-label="Dish">
+            <span id="confidence" class="badge"></span>
+          </div>
+        </div>
+
+        <div class="totals card">
+          <div class="kcal"><strong id="total-kcal">0</strong> <span>kcal</span></div>
+          <div class="macros">
+            <span><b data-i18n="macro.p">P</b> <span id="total-p">0</span> g</span>
+            <span><b data-i18n="macro.c">C</b> <span id="total-c">0</span> g</span>
+            <span><b data-i18n="macro.f">F</b> <span id="total-f">0</span> g</span>
+          </div>
+        </div>
+
+        <ul id="items" class="items"></ul>
+
+        <div class="row-actions">
+          <button id="add-item" type="button" class="secondary" data-i18n="result.addItem">+ Add item</button>
+          <button id="copy-all" type="button" class="secondary" data-i18n="result.copyAll">Copy all</button>
+        </div>
+
+        <p id="ai-note" class="ai-note"></p>
+        <p class="disclaimer" data-i18n="result.disclaimer">Values are AI estimates. Check grams before logging.</p>
+        <button id="new-photo" type="button" class="primary" data-i18n="result.newPhoto">New photo</button>
+      </div>
+    </section>
+
+    <!-- ===== History ===== -->
+    <section id="view-history" class="view" aria-labelledby="tab-history">
+      <h1 data-i18n="history.title">History</h1>
+      <ul id="history-list" class="history"></ul>
+      <p id="history-empty" class="empty" data-i18n="history.empty">No meals yet. Analyzed meals will appear here.</p>
+      <button id="history-clear" type="button" class="danger" data-i18n="history.clear" hidden>Clear history</button>
+    </section>
+
+    <!-- ===== Settings ===== -->
+    <section id="view-settings" class="view" aria-labelledby="tab-settings">
+      <h1 data-i18n="settings.title">Settings</h1>
+
+      <fieldset class="card">
+        <legend data-i18n="settings.provider">AI provider</legend>
+        <div id="provider-list" class="providers"></div>
+      </fieldset>
+
+      <div class="card field-stack">
+        <label for="api-key" class="label" data-i18n="settings.apiKey">API key</label>
+        <div class="key-row">
+          <input id="api-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button id="key-show" type="button" class="icon-btn" data-i18n-aria="settings.showKey">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 5c-5 0-9 4.5-10 7 1 2.5 5 7 10 7s9-4.5 10-7c-1-2.5-5-7-10-7Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-2a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg>
+          </button>
+        </div>
+        <a id="key-link" target="_blank" rel="noopener" class="small-link" data-i18n="settings.getKey">How do I get a key?</a>
+        <button id="key-test" type="button" class="secondary" data-i18n="settings.test">Test key</button>
+        <p id="key-status" class="status" role="status" aria-live="polite"></p>
+
+        <label for="model" class="label" data-i18n="settings.model">Model</label>
+        <input id="model" type="text" list="model-list" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <datalist id="model-list"></datalist>
+        <small class="hint" data-i18n="settings.modelHint">Leave the default unless you know what you are doing.</small>
+      </div>
+
+      <div class="card field-stack">
+        <label for="lang-select" class="label" data-i18n="settings.language">Language</label>
+        <select id="lang-select"></select>
+      </div>
+
+      <p class="privacy" data-i18n-html="settings.privacy"></p>
+      <a class="help-link" href="help.html" data-i18n="settings.help">Help &amp; setup guide</a>
+      <p class="version">Meal Snap v<span id="app-version"></span></p>
+    </section>
+  </main>
+
+  <nav class="tabs" role="tablist">
+    <button id="tab-snap" role="tab" class="tab active" data-goto="snap" type="button">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9Zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z"/></svg>
+      <span data-i18n="tab.snap">Snap</span>
+    </button>
+    <button id="tab-history" role="tab" class="tab" data-goto="history" type="button">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3Zm-1 5v5l4.25 2.52.77-1.28L13.5 12.2V8H12Z"/></svg>
+      <span data-i18n="tab.history">History</span>
+    </button>
+    <button id="tab-settings" role="tab" class="tab" data-goto="settings" type="button">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 21h4l.4-2.9c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5L19.4 13ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></svg>
+      <span data-i18n="tab.settings">Settings</span>
+    </button>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <template id="item-tpl">
+    <li class="item card">
+      <div class="item-main">
+        <input class="item-name" type="text" data-field="name">
+        <button type="button" class="icon-btn small copy-one" data-i18n-aria="result.copyName">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 16H8V7h11v14Z"/></svg>
+        </button>
+      </div>
+      <div class="item-sub">
+        <label class="grams"><input type="number" inputmode="decimal" min="0" step="1" data-field="grams"><span>g</span></label>
+        <span class="item-kcal"><strong></strong> kcal</span>
+        <span class="item-macros"></span>
+        <button type="button" class="icon-btn small toggle-details" data-i18n-aria="result.details">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25ZM20.7 7.04a1 1 0 0 0 0-1.41l-2.33-2.33a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.82-1.84Z"/></svg>
+        </button>
+        <button type="button" class="icon-btn small remove" data-i18n-aria="result.remove">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12ZM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4Z"/></svg>
+        </button>
+      </div>
+      <div class="item-details" hidden>
+        <span class="per100" data-i18n="result.per100">Per 100 g:</span>
+        <label>kcal<input type="number" inputmode="decimal" min="0" data-field="kcal_100g"></label>
+        <label data-i18n-aria="macro.protein"><span data-i18n="macro.p">P</span><input type="number" inputmode="decimal" min="0" step="0.1" data-field="protein_100g"></label>
+        <label data-i18n-aria="macro.carbs"><span data-i18n="macro.c">C</span><input type="number" inputmode="decimal" min="0" step="0.1" data-field="carbs_100g"></label>
+        <label data-i18n-aria="macro.fat"><span data-i18n="macro.f">F</span><input type="number" inputmode="decimal" min="0" step="0.1" data-field="fat_100g"></label>
+      </div>
+    </li>
+  </template>
+</body>
+</html>

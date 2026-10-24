@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Meal Snap Help</title>
+  <meta name="theme-color" content="#1f8a5b">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="help" data-page="help">
+  <header class="topbar">
+    <div class="brand"><img src="icons/favicon-32.png" alt="" width="24" height="24"><span data-i18n="app.title">Meal Snap</span></div>
+    <button id="lang-toggle" class="chip" type="button">CS</button>
+  </header>
+  <main>
+    <a class="back" href="./" data-i18n="help.back">‹ Back to the app</a>
+    <h1 data-i18n="help.title">Help</h1>
+    <p data-i18n="help.intro"></p>
+
+    <section class="card">
+      <h2 data-i18n="help.keyTitle"></h2>
+      <div data-i18n-html="help.keySteps"></div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="help.installTitle"></h2>
+      <div data-i18n-html="help.installSteps"></div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="help.useTitle"></h2>
+      <div data-i18n-html="help.useSteps"></div>
+    </section>
+
+    <h2 data-i18n="help.voiceTitle"></h2>
+    <p data-i18n="help.voiceText"></p>
+
+    <h2 data-i18n="help.paidTitle"></h2>
+    <div data-i18n-html="help.paidText"></div>
+
+    <h2 data-i18n="help.privacyTitle"></h2>
+    <div data-i18n-html="help.privacyText"></div>
+
+    <h2 data-i18n="help.accuracyTitle"></h2>
+    <p data-i18n="help.accuracyText"></p>
+  </main>
+  <script type="module">
+    import { initialLang, setLang, getLang, t } from './i18n.js';
+    const toggle = document.getElementById('lang-toggle');
+    async function apply(code) {
+      await setLang(code);
+      toggle.textContent = getLang() === 'en' ? 'CS' : 'EN';
+      document.title = t('help.title');
+    }
+    toggle.addEventListener('click', () => apply(getLang() === 'en' ? 'cs' : 'en'));
+    apply(initialLang());
+  </script>
+</body>
+</html>
