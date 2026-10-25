@@ -5,3 +5,13 @@ compatibility_date = "2026-10-01"
 [vars]
 # Origins allowed to call the proxy (comma-separated). Put your GitHub Pages origin here.
 ALLOWED_ORIGINS = "https://globus2008.github.io,http://localhost:8000,http://localhost:3000"
+
+# At most 10 logins (= exports or login checks) per minute from one IP address.
+# Rate limiting bindings can only be set here, not in the Cloudflare dashboard (needs wrangler 4.36+).
+[[ratelimits]]
+name = "LOGIN_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 10
+  period = 60

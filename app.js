@@ -1,9 +1,9 @@
 import { PROVIDERS, ADAPTERS, ProviderError } from './providers.js';
 import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
-import { MEALS, KtError, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, md5 } from './kt.js';
+import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, md5 } from './kt.js';
 
-const VERSION = '1.1.1';
+const VERSION = '1.2.0';
 const HISTORY_MAX = 30;
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -383,13 +383,19 @@ async function sendToKt() {
 
 function wireKtSettings() {
   const fill = () => {
-    $('#kt-proxy').value = settings.kt.proxy || '';
+    $('#kt-proxy').value = ktProxy(settings.kt);
     $('#kt-email').value = settings.kt.email || '';
     $('#kt-password').value = '';
     $('#kt-password').placeholder = settings.kt.passwordHash ? t('kt.passwordSaved') : '';
   };
   fill();
-  $('#kt-proxy').addEventListener('input', (e) => { settings.kt.proxy = e.target.value.trim(); saveSettings(); });
+  // Empty or the default means "use the default", so a future change of the default reaches everyone.
+  $('#kt-proxy').addEventListener('input', (e) => {
+    const v = e.target.value.trim().replace(/\/+$/, '');
+    settings.kt.proxy = v === DEFAULT_PROXY ? '' : v;
+    saveSettings();
+  });
+  $('#kt-proxy').addEventListener('change', (e) => { if (!e.target.value.trim()) e.target.value = DEFAULT_PROXY; });
   $('#kt-email').addEventListener('input', (e) => { settings.kt.email = e.target.value.trim(); saveSettings(); });
   // Keep only the hash the site itself sends at login; the password itself is never stored.
   $('#kt-password').addEventListener('change', (e) => {

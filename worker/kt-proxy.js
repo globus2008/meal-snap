@@ -7,10 +7,13 @@
 //   POST /login-test {email, passwordHash}                          -> {ok: true}
 //   POST /log        {email, passwordHash, date, mealId, items[]}   -> {ok: true, results: [{ok, error?}]}
 //     date: 'dd.MM.yyyy', mealId: '1'..'6', items: [{title, kcal, protein, carbs, fat}]
-// Errors: {ok: false, error: 'auth' | 'upstream' | 'badRequest' | 'origin'}
+// Errors: {ok: false, error: 'auth' | 'upstream' | 'badRequest' | 'origin' | 'rateLimited'}
 //
 // Env: ALLOWED_ORIGINS = comma-separated list of origins allowed to call it,
 //      e.g. "https://you.github.io,http://localhost:8000".
+//      LOGIN_LIMITER = optional rate limiting binding (see wrangler.toml). The Origin check only
+//      stops other websites; anyone can call the worker directly, so this caps logins per IP to keep
+//      it from being used to try passwords against kaloricketabulky.cz.
 // The KT endpoints are unofficial (read from the site's own frontend) and may change.
 
 const KT = 'https://www.kaloricketabulky.cz';
@@ -142,6 +145,12 @@ export default {
     const path = new URL(request.url).pathname;
     if (request.method !== 'POST' || !['/login-test', '/log'].includes(path)) {
       return json({ ok: false, error: 'badRequest' }, 404, origin);
+    }
+
+    if (env.LOGIN_LIMITER) {
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+      const { success } = await env.LOGIN_LIMITER.limit({ key: ip });
+      if (!success) return json({ ok: false, error: 'rateLimited' }, 429, origin);
     }
 
     let body;

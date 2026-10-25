@@ -11,15 +11,19 @@ import { withTimeout } from './voice.js';
 // diaryTimeGuid values on kaloricketabulky.cz
 export const MEALS = ['1', '2', '3', '4', '5', '6']; // breakfast, morning snack, lunch, afternoon snack, dinner, second dinner
 
+// Proxy run by the app's author; users can point the app at their own deployment instead.
+export const DEFAULT_PROXY = 'https://meal-snap-kt.globus-01e.workers.dev';
+
 export class KtError extends Error {
-  // code: notConfigured | auth | network | timeout | upstream | proxy
+  // code: notConfigured | auth | network | timeout | upstream | proxy | rateLimited
   constructor(code) {
     super(code);
     this.code = code;
   }
 }
 
-export const ktConfigured = (cfg) => Boolean(cfg?.proxy && cfg.email && cfg.passwordHash);
+export const ktProxy = (cfg) => cfg?.proxy || DEFAULT_PROXY;
+export const ktConfigured = (cfg) => Boolean(cfg?.email && cfg.passwordHash);
 
 // Meal of the day preselected from the time the meal was eaten. Just after midnight still counts
 // as the previous day's second dinner.
@@ -42,7 +46,7 @@ async function call(cfg, path, body) {
   if (!ktConfigured(cfg)) throw new KtError('notConfigured');
   let res;
   try {
-    res = await withTimeout(fetch(`${cfg.proxy.replace(/\/+$/, '')}${path}`, {
+    res = await withTimeout(fetch(`${ktProxy(cfg).replace(/\/+$/, '')}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: cfg.email, passwordHash: cfg.passwordHash, ...body }),
@@ -53,7 +57,7 @@ async function call(cfg, path, body) {
   let data = null;
   try { data = await res.json(); } catch { /* not our proxy */ }
   if (!data || typeof data.ok !== 'boolean') throw new KtError('proxy');
-  if (!data.ok) throw new KtError(data.error === 'auth' ? 'auth' : data.error === 'upstream' ? 'upstream' : 'proxy');
+  if (!data.ok) throw new KtError(['auth', 'upstream', 'rateLimited'].includes(data.error) ? data.error : 'proxy');
   return data;
 }
 

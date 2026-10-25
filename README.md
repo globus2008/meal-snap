@@ -52,6 +52,6 @@ npx wrangler dev      # local, http://localhost:8787
 npx wrangler deploy   # https://meal-snap-kt.<account>.workers.dev
 ```
 
-Without wrangler, paste `kt-proxy.js` into a new Worker in the Cloudflare dashboard and add the `ALLOWED_ORIGINS` variable (the in-app help has the click-by-click steps). Then enter the worker URL, e-mail and password in Settings → Kalorické tabulky. The app stores only the MD5 hash of the password.
+The app uses the author's deployment (`DEFAULT_PROXY` in `kt.js`) unless the user enters another URL in Settings → Kalorické tabulky. `wrangler deploy` also sets up the `LOGIN_LIMITER` binding (10 requests per minute per IP), which keeps the publicly reachable worker from being used to try passwords. Without wrangler, paste `kt-proxy.js` into a new Worker in the Cloudflare dashboard and add the `ALLOWED_ORIGINS` variable (the in-app help has the click-by-click steps). The limiter can't be set up that way; the worker then runs without it. The app stores only the MD5 hash of the password.
 
 When you change any file, bump `CACHE` in `sw.js` (and `VERSION` in `app.js`) so installed apps pick up the update.
