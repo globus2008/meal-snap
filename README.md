@@ -43,7 +43,12 @@ Open the printed URL. The camera and the service worker need `localhost` or HTTP
 
 ## Kalorické tabulky proxy
 
-kaloricketabulky.cz has no public API, rejects cross-origin requests and keeps its session in an HttpOnly cookie, so the app can't write to the diary from the browser. `worker/kt-proxy.js` is a stateless Cloudflare Worker that does it instead: for each request it logs in (`POST /login/create`, password as MD5 hex), loads the own-food form and posts every item to `/user/foodstuff/add` with `diaryTimeGuid` 1–6 (breakfast … second dinner) and the date as `dd.MM.yyyy`. These endpoints are unofficial (mapped from the site's frontend, see [kt-mcp](https://github.com/honzajscz/kt-mcp)) and may change without notice.
+kaloricketabulky.cz has no public API, rejects cross-origin requests and keeps its session in an HttpOnly cookie, so the app can't write to the diary from the browser. `worker/kt-proxy.js` is a stateless Cloudflare Worker that does it instead:
+
+- `/search` looks up every item in the KT food database in one request (anonymous `/autocomplete/foodstuff-activity-meal`). The AI returns a Czech search term (`search_cs`) for this, and the app preselects the best match whose kcal is close to the AI's estimate.
+- `/log` logs in (`POST /login/create`, password as MD5 hex) and posts every item to `/user/foodstuff/add` with `diaryTimeGuid` 1–6 (breakfast … second dinner) and the date as `dd.MM.yyyy`. A matched database food is sent with its detail form in the base unit (1 g or 1 ml, ids `…0001` / `…0002`); anything else becomes an "own food" entry with the totals from the analysis.
+
+The meal of the day is preselected from the photo's EXIF capture time, falling back to the file date. These endpoints are unofficial (mapped from the site's frontend, see [kt-mcp](https://github.com/honzajscz/kt-mcp)) and may change without notice.
 
 ```sh
 cd worker

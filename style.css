@@ -180,6 +180,10 @@ input[type="date"] { -webkit-appearance: none; appearance: none; text-align: lef
 .item-details label { display: inline-flex; align-items: center; gap: 4px; }
 .item-details input { width: 70px; min-height: 38px; padding: 6px; }
 .per100 { width: 100%; }
+.item-kt { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 14px; color: var(--muted); }
+.item-kt-label { flex: none; font-weight: 700; font-size: 12px; padding: 2px 6px; border-radius: 6px; background: var(--surface-2); }
+.item-kt-select { min-height: 38px !important; padding: 6px 8px !important; font-size: 14px !important; flex: 1; min-width: 0; text-overflow: ellipsis; }
+.item-kt-busy { flex: 1; }
 
 .row-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
 .kt-card { margin-bottom: 12px; }

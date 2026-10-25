@@ -53,13 +53,14 @@ export const RESULT_SCHEMA = {
         type: 'object',
         properties: {
           name: { type: 'string' },
+          search_cs: { type: 'string' },
           grams: NUM,
           kcal_100g: NUM,
           protein_100g: NUM,
           carbs_100g: NUM,
           fat_100g: NUM,
         },
-        required: ['name', 'grams', 'kcal_100g', 'protein_100g', 'carbs_100g', 'fat_100g'],
+        required: ['name', 'search_cs', 'grams', 'kcal_100g', 'protein_100g', 'carbs_100g', 'fat_100g'],
         additionalProperties: false,
       },
     },
@@ -83,6 +84,7 @@ Rules:
 - Estimate the weight in grams of each ingredient as it is on the plate (cooked weight). Use the plate, cutlery and other objects for scale.
 - Include hidden ingredients that are typically used: cooking oil, butter, sauces, dressings, sugar, breading.
 - For each ingredient give typical nutrition values per 100 g in that preparation state: kcal, protein, carbohydrates, fat (grams).
+- "search_cs": always in Czech, whatever the language below: a short search term (1–3 words) for finding the ingredient in the Czech food database "Kalorické tabulky", main word first, e.g. "rýže vařená", "kuřecí prsa", "olej řepkový", "brambory vařené".
 - One line per ingredient; do not list the whole dish as one item unless it cannot be split (e.g. a packaged product).
 - "note": one or two short sentences on assumptions or uncertainty (portion size, hidden fat...).
 - "confidence": low / medium / high.
@@ -145,6 +147,7 @@ export function parseResult(text) {
       .filter((it) => it && String(it.name || '').trim())
       .map((it) => ({
         name: String(it.name).trim(),
+        search: String(it.search_cs || '').trim(),
         grams: Math.round(num(it.grams)),
         kcal_100g: round(num(it.kcal_100g), 0),
         protein_100g: round(num(it.protein_100g)),

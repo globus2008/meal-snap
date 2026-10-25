@@ -1,9 +1,9 @@
 import { PROVIDERS, ADAPTERS, ProviderError } from './providers.js';
 import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
-import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, md5 } from './kt.js';
+import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, ktSearch, bestMatch, md5 } from './kt.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const HISTORY_MAX = 30;
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -103,6 +103,56 @@ function drawScaled(img, maxSide, quality) {
   return c.toDataURL('image/jpeg', quality);
 }
 
+// EXIF DateTimeOriginal (local time) of a JPEG, or null. Reads only the first 128 KB.
+async function exifTakenAt(file) {
+  try {
+    const v = new DataView(await file.slice(0, 128 * 1024).arrayBuffer());
+    if (v.getUint16(0) !== 0xffd8) return null;
+    let p = 2;
+    while (p + 4 <= v.byteLength && v.getUint8(p) === 0xff) {
+      const marker = v.getUint8(p + 1);
+      const size = v.getUint16(p + 2);
+      if (marker === 0xe1 && v.getUint32(p + 4) === 0x45786966) { // APP1 "Exif"
+        const tiff = p + 10;
+        const le = v.getUint16(tiff) === 0x4949;
+        const u16 = (o) => v.getUint16(tiff + o, le);
+        const u32 = (o) => v.getUint32(tiff + o, le);
+        const findTag = (ifd, tag) => {
+          for (let i = 0, n = u16(ifd); i < n; i++) {
+            const e = ifd + 2 + i * 12;
+            if (u16(e) === tag) return e;
+          }
+          return -1;
+        };
+        const ascii = (e) => {
+          const off = tiff + u32(e + 8);
+          let s = '';
+          for (let i = 0; i < 19 && off + i < v.byteLength; i++) s += String.fromCharCode(v.getUint8(off + i));
+          return s;
+        };
+        const ifd0 = u32(4);
+        const exifPtr = findTag(ifd0, 0x8769);
+        let e = exifPtr >= 0 ? findTag(u32(exifPtr + 8), 0x9003) : -1; // DateTimeOriginal
+        if (e < 0) e = findTag(ifd0, 0x0132); // DateTime
+        const m = e >= 0 && ascii(e).match(/^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/);
+        return m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
+      }
+      if (marker === 0xda) break; // image data starts, no EXIF
+      p += 2 + size;
+    }
+  } catch { /* malformed EXIF */ }
+  return null;
+}
+
+// When the meal was eaten, for preselecting the meal of the day: the photo's EXIF time, else the
+// file date (gallery picks on Android), never in the future. A fresh camera shot gives "now".
+async function photoTakenAt(file) {
+  const now = Date.now();
+  const exif = await exifTakenAt(file);
+  if (exif && !Number.isNaN(exif.getTime()) && exif.getTime() <= now + 60000) return exif.getTime();
+  return file.lastModified && file.lastModified <= now ? file.lastModified : now;
+}
+
 async function onPhotoChosen(file) {
   if (!file) return;
   try {
@@ -112,6 +162,7 @@ async function onPhotoChosen(file) {
       base64: drawScaled(img, 1024, 0.8).split(',')[1],
       thumb: drawScaled(img, 120, 0.7),
       previewUrl: url,
+      takenAt: await photoTakenAt(file),
     };
     $('#photo-preview').src = url;
     $('#photo-preview').hidden = false;
@@ -168,6 +219,7 @@ async function analyze() {
     current = {
       id: Date.now().toString(36),
       date: new Date().toISOString(),
+      takenAt: new Date(photo.takenAt).toISOString(),
       dish: res.dish,
       note: res.note,
       confidence: res.confidence,
@@ -226,6 +278,7 @@ function renderItems() {
     $('.item-name', li).setAttribute('aria-label', t('result.name'));
     $('.grams input', li).setAttribute('aria-label', t('result.grams'));
     updateItemRow(li, it);
+    updateKtRow(li, it);
     list.appendChild(li);
   });
   updateTotals();
@@ -263,6 +316,7 @@ function wireResult() {
     const field = input.dataset.field;
     if (field === 'name') {
       it.name = input.value;
+      delete it.search; // the AI's search term described the old name
     } else {
       const n = parseFloat(String(input.value).replace(',', '.'));
       it[field] = Number.isFinite(n) && n >= 0 ? n : 0;
@@ -270,6 +324,18 @@ function wireResult() {
       updateTotals();
     }
     persistCurrent();
+  });
+
+  list.addEventListener('change', (e) => {
+    const li = e.target.closest('.item');
+    if (!li) return;
+    const it = current.items[+li.dataset.index];
+    if (e.target.matches('.item-kt-select')) {
+      it.kt = { ...it.kt, foodId: e.target.value || null };
+      persistCurrent();
+    } else if (e.target.matches('.item-name')) {
+      searchKt();
+    }
   });
 
   list.addEventListener('click', (e) => {
@@ -322,6 +388,62 @@ function ktErrorMessage(err) {
   return t(`kt.error.${err instanceof KtError ? err.code : 'unknown'}`);
 }
 
+// ---- matching items with the KT food database ----
+
+const ktSearching = new Set(); // items with a search in flight
+const ktQuery = (it) => (it.search || it.name || '').trim();
+
+function updateKtRow(li, it) {
+  const row = $('.item-kt', li);
+  row.hidden = !ktConfigured(settings.kt) || !it.name.trim();
+  if (row.hidden) return;
+  const busy = ktSearching.has(it);
+  const sel = $('.item-kt-select', li);
+  $('.item-kt-busy', li).hidden = !busy;
+  sel.hidden = busy;
+  if (busy) return;
+  sel.textContent = '';
+  for (const c of it.kt?.candidates || []) {
+    const label = `${c.title}${c.brand ? ` (${c.brand})` : ''} · ${fmt(c.kcal)} kcal/100 ${c.unit}`;
+    sel.appendChild(Object.assign(document.createElement('option'), { value: c.id, textContent: label }));
+  }
+  sel.appendChild(Object.assign(document.createElement('option'), { value: '', textContent: t('kt.ownFood') }));
+  sel.value = it.kt?.foodId || '';
+}
+
+function refreshKtRows() {
+  document.querySelectorAll('#items .item').forEach((li) => {
+    const it = current?.items[+li.dataset.index];
+    if (it) updateKtRow(li, it);
+  });
+}
+
+// Looks up every item whose search term changed since its last lookup, in one request.
+async function searchKt() {
+  if (!current || !ktConfigured(settings.kt)) return;
+  const todo = current.items.filter((it) => ktQuery(it) && it.kt?.query !== ktQuery(it) && !ktSearching.has(it));
+  if (!todo.length) return;
+  const queries = todo.map(ktQuery);
+  todo.forEach((it) => ktSearching.add(it));
+  refreshKtRows();
+  try {
+    const results = await ktSearch(settings.kt, queries);
+    todo.forEach((it, i) => {
+      // The name may have changed again while searching; keep the result only if it still fits.
+      if (ktQuery(it) !== queries[i]) return;
+      const candidates = results[i] || [];
+      it.kt = { query: queries[i], candidates, foodId: bestMatch(candidates, it.kcal_100g) };
+    });
+    saveHistory(); // the items may belong to a meal that is no longer open
+  } catch (err) {
+    console.error(err);
+    if (!$('#result').hidden) setStatus($('#kt-status'), `${t('kt.searchFailed')} ${ktErrorMessage(err)}`, 'error');
+  } finally {
+    todo.forEach((it) => ktSearching.delete(it));
+    refreshKtRows();
+  }
+}
+
 function renderKt() {
   const ready = ktConfigured(settings.kt);
   $('#kt-form').hidden = !ready;
@@ -329,12 +451,14 @@ function renderKt() {
   const sel = $('#kt-meal');
   sel.textContent = '';
   for (const id of MEALS) sel.appendChild(Object.assign(document.createElement('option'), { value: id, textContent: mealName(id) }));
-  // Preselect from the last export, else from the time the meal was analyzed.
-  const pre = current.kt || (({ date, mealId }) => ({ date: isoDate(date), mealId }))(defaultMeal(current.date));
+  // Preselect from the last export, else from when the photo was taken (older meals: analyzed).
+  const pre = current.kt || (({ date, mealId }) => ({ date: isoDate(date), mealId }))(defaultMeal(current.takenAt || current.date));
   $('#kt-date').value = pre.date;
   sel.value = pre.mealId;
   if (current.kt) setStatus($('#kt-status'), ktSentText(current.kt), 'ok');
   else setStatus($('#kt-status'), '');
+  refreshKtRows();
+  searchKt();
 }
 
 async function sendToKt() {
@@ -358,10 +482,12 @@ async function sendToKt() {
   try {
     const items = pending.map((it) => {
       const x = itemTotals(it);
-      return { title: `${it.name.trim()} (${fmt(it.grams)} g)`, kcal: x.kcal, protein: x.p, carbs: x.c, fat: x.f };
+      const own = { title: `${it.name.trim()} (${fmt(it.grams)} g)`, kcal: x.kcal, protein: x.p, carbs: x.c, fat: x.f };
+      return it.kt?.foodId && it.grams > 0 ? { ...own, foodId: it.kt.foodId, grams: it.grams } : own;
     });
     const results = await ktLog(settings.kt, { date, mealId, items });
     pending.forEach((it, i) => { if (results[i]?.ok) it.ktSent = true; });
+    const fellBack = results.filter((r) => r?.own).length;
     const failed = pending.filter((it) => !it.ktSent);
     if (failed.length) {
       persistCurrent();
@@ -371,8 +497,9 @@ async function sendToKt() {
     current.items.forEach((it) => { delete it.ktSent; });
     current.kt = { date, mealId, at: new Date().toISOString() };
     persistCurrent();
-    setStatus(st, ktSentText(current.kt), 'ok');
-    toast(ktSentText(current.kt));
+    const msg = ktSentText(current.kt) + (fellBack ? ` ${t('kt.fellBack', { n: fellBack })}` : '');
+    setStatus(st, msg, 'ok');
+    toast(msg);
   } catch (err) {
     console.error(err);
     setStatus(st, ktErrorMessage(err), 'error');

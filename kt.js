@@ -42,14 +42,14 @@ const pad = (n) => String(n).padStart(2, '0');
 export const isoDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const ktDate = (iso) => iso.split('-').reverse().join('.'); // yyyy-MM-dd -> dd.MM.yyyy
 
-async function call(cfg, path, body) {
-  if (!ktConfigured(cfg)) throw new KtError('notConfigured');
+async function call(cfg, path, body, needsLogin = true) {
+  if (needsLogin && !ktConfigured(cfg)) throw new KtError('notConfigured');
   let res;
   try {
     res = await withTimeout(fetch(`${ktProxy(cfg).replace(/\/+$/, '')}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: cfg.email, passwordHash: cfg.passwordHash, ...body }),
+      body: JSON.stringify(needsLogin ? { email: cfg.email, passwordHash: cfg.passwordHash, ...body } : body),
     }), 60000);
   } catch (e) {
     throw new KtError(e.message === 'timeout' ? 'timeout' : 'network');
@@ -62,6 +62,21 @@ async function call(cfg, path, body) {
 }
 
 export const ktTest = (cfg) => call(cfg, '/login-test', {});
+
+// Database candidates for each query: [[{id, title, brand, kcal, unit}]]. Needs no login.
+export async function ktSearch(cfg, queries) {
+  const data = await call(cfg, '/search', { queries }, false);
+  return data.results;
+}
+
+// The site's ranking first, but skip candidates whose energy is far off the AI estimate
+// ("rohlík" should not pick "párek v rohlíku"). Returns an id, or null for own food.
+export function bestMatch(candidates, kcal100) {
+  if (!candidates?.length) return null;
+  if (!(kcal100 > 0)) return candidates[0].id;
+  const close = candidates.slice(0, 5).find((c) => c.kcal > 0 && Math.abs(c.kcal - kcal100) / kcal100 <= 0.35);
+  return (close || candidates[0]).id;
+}
 
 export async function ktLog(cfg, { date, mealId, items }) {
   const data = await call(cfg, '/log', { date: ktDate(date), mealId, items });
