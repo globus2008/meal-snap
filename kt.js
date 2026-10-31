@@ -69,14 +69,47 @@ export async function ktSearch(cfg, queries) {
   return data.results;
 }
 
-// The site's ranking first, but skip candidates whose energy is far off the AI estimate
-// ("rohlík" should not pick "párek v rohlíku"). Returns an id, or null for own food.
-export function bestMatch(candidates, kcal100) {
-  if (!candidates?.length) return null;
-  if (!(kcal100 > 0)) return candidates[0].id;
-  const close = candidates.slice(0, 5).find((c) => c.kcal > 0 && Math.abs(c.kcal - kcal100) / kcal100 <= 0.35);
-  return (close || candidates[0]).id;
+// ---------- picking the database food ----------
+// The database also lists whole dishes ("Barbecue pečené kuřecí stehno dušená rýže"), which must
+// not be logged for a single ingredient: the other parts of the plate are separate items already.
+
+const words = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .split(/[^a-z0-9%]+/).filter(Boolean);
+const STOP = new Set(['bez', 'pro', 'the', 'cca', 'typ', 'kus', 'ks']);
+const LINKS = new Set(['s', 'se', 'a', 'with', 'and']);
+// Side dishes, sauces and the like: a title adding one of these is a meal, not one food.
+const SIDES = ['ryz', 'bramb', 'hranol', 'knedl', 'testov', 'spaget', 'nudl', 'kase', 'omack', 'zeli', 'salat',
+  'chleb', 'peciv', 'rohl', 'kusk', 'bulgur', 'kroket', 'rizot', 'zelen', 'dresink', 'kecup', 'tatar', 'menu', 'porce'];
+const stem = (w) => w.slice(0, 4);
+
+function judge(c, query) {
+  const title = words(c.title);
+  const extra = title.filter((w) => w.length >= 3 && !STOP.has(w) && !/^\d/.test(w) && !query.stems.has(stem(w)));
+  const linked = title.some((w) => LINKS.has(w)) || /\+/.test(c.title);
+  return {
+    dish: extra.length >= 3 || extra.some((w) => SIDES.some((s) => w.startsWith(s))) || (linked && extra.length >= 2),
+    // "Párek v rohlíku" is about something else than "rohlík"
+    offLead: Boolean(title.length && query.lead && stem(title[0]) !== query.lead),
+    // a raw food for a cooked portion is a worse fit than another extra word
+    extra: extra.length + extra.filter((w) => /^(syrov|surov)/.test(w)).length,
+  };
 }
+
+// Candidates in the order to offer them: single foods before dishes, energy close to the AI
+// estimate, title led by the query's main word, fewest words beyond the query, then the site's
+// own ranking. Each gets `dish: true|false`.
+export function rankCandidates(candidates, query, kcal100) {
+  const q = words(query);
+  const qinfo = { stems: new Set(q.map(stem)), lead: q[0] && stem(q[0]) };
+  const far = (c) => kcal100 > 0 && !(c.kcal > 0 && Math.abs(c.kcal - kcal100) / kcal100 <= 0.35);
+  return (candidates || [])
+    .map((c, i) => ({ c, i, far: far(c), ...judge(c, qinfo) }))
+    .sort((a, b) => a.dish - b.dish || a.far - b.far || a.offLead - b.offLead || a.extra - b.extra || a.i - b.i)
+    .map(({ c, dish }) => ({ ...c, dish }));
+}
+
+// The id to preselect from ranked candidates, or null for own food (when there are only dishes).
+export const bestMatch = (ranked) => (ranked?.[0] && !ranked[0].dish ? ranked[0].id : null);
 
 export async function ktLog(cfg, { date, mealId, items }) {
   const data = await call(cfg, '/log', { date: ktDate(date), mealId, items });

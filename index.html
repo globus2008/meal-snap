@@ -54,6 +54,13 @@
 
         <button id="analyze" type="button" class="primary" disabled data-i18n="snap.analyze">Analyze meal</button>
         <p id="status" class="status" role="status" aria-live="polite"></p>
+
+        <div id="clarify" class="card clarify" role="group" aria-labelledby="clarify-question" hidden>
+          <p id="clarify-question" class="clarify-question"></p>
+          <div id="clarify-options" class="clarify-options"></div>
+          <small class="hint" data-i18n="clarify.hint">Or write the answer in the note and tap Analyze meal.</small>
+          <button id="clarify-skip" type="button" class="link" data-i18n="clarify.skip">Analyze without answering</button>
+        </div>
       </div>
 
       <div id="result" hidden>

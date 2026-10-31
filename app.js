@@ -1,9 +1,9 @@
 import { PROVIDERS, ADAPTERS, ProviderError } from './providers.js';
 import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
-import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, ktSearch, bestMatch, md5 } from './kt.js';
+import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, ktSearch, rankCandidates, bestMatch, md5 } from './kt.js';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const HISTORY_MAX = 30;
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -168,6 +168,7 @@ async function onPhotoChosen(file) {
     $('#photo-preview').hidden = false;
     $('#photo-empty').hidden = true;
     $('#photo-drop').classList.add('has-photo');
+    $('#clarify').hidden = true;
     $('#analyze').disabled = false;
     setStatus($('#status'), '');
   } catch {
@@ -185,6 +186,7 @@ function resetComposer() {
   $('#photo-empty').hidden = false;
   $('#photo-drop').classList.remove('has-photo');
   $('#note').value = '';
+  $('#clarify').hidden = true;
   $('#analyze').disabled = true;
   setStatus($('#status'), '');
   $('#result').hidden = true;
@@ -194,6 +196,24 @@ function resetComposer() {
 
 // ---------- analysis ----------
 
+// The AI may ask one question first (duck or chicken?). Any analysis started while it is shown
+// counts as the answer, so it is never asked twice in a row.
+function showClarify(question, options) {
+  $('#clarify-question').textContent = question;
+  const box = $('#clarify-options');
+  box.textContent = '';
+  for (const opt of options) {
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'chip', textContent: opt });
+    b.addEventListener('click', () => {
+      const note = $('#note');
+      note.value = [note.value.trim(), `${question} ${opt}`].filter(Boolean).join('\n');
+      analyze();
+    });
+    box.appendChild(b);
+  }
+  $('#clarify').hidden = false;
+}
+
 async function analyze() {
   if (!photo) return;
   if (!currentKey()) {
@@ -202,6 +222,8 @@ async function analyze() {
   }
   const btn = $('#analyze');
   btn.disabled = true;
+  const allowQuestion = $('#clarify').hidden;
+  $('#clarify').hidden = true;
   setStatus($('#status'), t('snap.analyzing', { provider: PROVIDERS[settings.provider].label }), 'busy');
   try {
     const note = $('#note').value.trim();
@@ -211,7 +233,13 @@ async function analyze() {
       imageBase64: photo.base64,
       note,
       lang: getLang(),
+      allowQuestion,
     });
+    if (allowQuestion && res.question) {
+      setStatus($('#status'), '');
+      showClarify(res.question, res.options);
+      return;
+    }
     if (!res.items.length) {
       setStatus($('#status'), res.note || t('error.noFood'), 'error');
       return;
@@ -431,8 +459,8 @@ async function searchKt() {
     todo.forEach((it, i) => {
       // The name may have changed again while searching; keep the result only if it still fits.
       if (ktQuery(it) !== queries[i]) return;
-      const candidates = results[i] || [];
-      it.kt = { query: queries[i], candidates, foodId: bestMatch(candidates, it.kcal_100g) };
+      const candidates = rankCandidates(results[i], queries[i], it.kcal_100g);
+      it.kt = { query: queries[i], candidates, foodId: bestMatch(candidates) };
     });
     saveHistory(); // the items may belong to a meal that is no longer open
   } catch (err) {
@@ -814,6 +842,7 @@ async function init() {
   $('#lang-toggle').addEventListener('click', () => changeLang(getLang() === 'en' ? 'cs' : 'en'));
   $('#photo-input').addEventListener('change', (e) => onPhotoChosen(e.target.files[0]));
   $('#analyze').addEventListener('click', analyze);
+  $('#clarify-skip').addEventListener('click', analyze);
 
   wireResult();
   wireVoice();

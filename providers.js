@@ -1,5 +1,5 @@
 // AI provider adapters. Every provider exposes the same surface:
-//   analyze({ key, model, imageBase64, note, lang }) -> normalized result
+//   analyze({ key, model, imageBase64, note, lang, allowQuestion }) -> normalized result
 //   transcribe({ key, model, wavBlob, lang })        -> string   (only if `audio`)
 //   listModels({ key })                               -> string[] (also validates the key)
 // Calls go straight from the browser to the provider with the user's own key.
@@ -66,8 +66,10 @@ export const RESULT_SCHEMA = {
     },
     note: { type: 'string' },
     confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+    question: { type: 'string' },
+    options: { type: 'array', items: { type: 'string' } },
   },
-  required: ['dish', 'items', 'note', 'confidence'],
+  required: ['dish', 'items', 'note', 'confidence', 'question', 'options'],
   additionalProperties: false,
 };
 
@@ -76,7 +78,12 @@ const LANG_RULES = {
   cs: 'Write the dish name, ingredient names and the note in Czech. Use ingredient names the way Czech nutrition databases such as "Kalorické tabulky" list them (e.g. "rýže jasmínová vařená", "kuřecí prsa grilovaná", "olej řepkový").',
 };
 
-export function buildPrompt(note, lang) {
+const QUESTION_RULES = {
+  ask: `- If you cannot tell the kind of meat (chicken, turkey, duck, pork, beef...) with reasonable certainty from the photo and the user's information, or another ingredient whose identity changes the calories a lot, do not guess: return an empty "items" array, one short question in "question" (in the language below) and 2–4 likely answers in "options". Ask only when it really matters; otherwise "question" is "" and "options" is [].`,
+  noAsk: `- Do not ask questions: "question" must be "" and "options" []. If the kind of meat or another ingredient stays uncertain, pick the most likely one and say so in "note".`,
+};
+
+export function buildPrompt(note, lang, allowQuestion = false) {
   return `You are a nutrition assistant. Look at the photo of a meal and break it down into the individual ingredients a person would log separately in a calorie-tracking app.
 
 Rules:
@@ -84,11 +91,13 @@ Rules:
 - Estimate the weight in grams of each ingredient as it is on the plate (cooked weight). Use the plate, cutlery and other objects for scale.
 - Include hidden ingredients that are typically used: cooking oil, butter, sauces, dressings, sugar, breading.
 - For each ingredient give typical nutrition values per 100 g in that preparation state: kcal, protein, carbohydrates, fat (grams).
-- "search_cs": always in Czech, whatever the language below: a short search term (1–3 words) for finding the ingredient in the Czech food database "Kalorické tabulky", main word first, e.g. "rýže vařená", "kuřecí prsa", "olej řepkový", "brambory vařené".
+- "search_cs": always in Czech, whatever the language below: a short search term (1–3 words) for finding the ingredient in the Czech food database "Kalorické tabulky", main word first, e.g. "rýže vařená", "kuřecí stehno pečené", "olej řepkový", "brambory vařené". It names this one ingredient only, never a dish or its sides or sauce ("kuřecí stehno pečené", not "kuřecí stehno s rýží" or "BBQ kuřecí stehno"), because the other parts of the plate are separate items.
+- Identify meat carefully: the colour of the meat and skin, the shape of the bones and the fibres tell chicken from duck, turkey, pork or beef. Name the kind of meat in "name" and "search_cs".
 - One line per ingredient; do not list the whole dish as one item unless it cannot be split (e.g. a packaged product).
 - "note": one or two short sentences on assumptions or uncertainty (portion size, hidden fat...).
 - "confidence": low / medium / high.
 - If there is no food in the photo, return an empty "items" array and explain in "note".
+${allowQuestion ? QUESTION_RULES.ask : QUESTION_RULES.noAsk}
 - ${LANG_RULES[lang] || LANG_RULES.en}
 ${note ? `\nAdditional information from the user (trust it over the photo): """${note}"""\n` : ''}
 Respond with JSON only, matching this JSON Schema:
@@ -143,6 +152,8 @@ export function parseResult(text) {
     dish: String(data.dish || '').trim(),
     note: String(data.note || '').trim(),
     confidence: ['low', 'medium', 'high'].includes(data.confidence) ? data.confidence : 'medium',
+    question: String(data.question || '').trim(),
+    options: (Array.isArray(data.options) ? data.options : []).map((o) => String(o).trim()).filter(Boolean).slice(0, 6),
     items: items
       .filter((it) => it && String(it.name || '').trim())
       .map((it) => ({
@@ -187,11 +198,11 @@ async function geminiGenerate(key, model, parts, json) {
 }
 
 const gemini = {
-  async analyze({ key, model, imageBase64, note, lang }) {
+  async analyze({ key, model, imageBase64, note, lang, allowQuestion }) {
     requireKey(key);
     const text = await geminiGenerate(key, model, [
       { inline_data: { mime_type: 'image/jpeg', data: imageBase64 } },
-      { text: buildPrompt(note, lang) },
+      { text: buildPrompt(note, lang, allowQuestion) },
     ], true);
     return parseResult(text);
   },
@@ -225,7 +236,7 @@ const claudeHeaders = (key) => ({
 });
 
 const claude = {
-  async analyze({ key, model, imageBase64, note, lang }) {
+  async analyze({ key, model, imageBase64, note, lang, allowQuestion }) {
     requireKey(key);
     const body = await request(`${ANTHROPIC}/messages`, {
       method: 'POST',
@@ -238,7 +249,7 @@ const claude = {
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
-            { type: 'text', text: buildPrompt(note, lang) },
+            { type: 'text', text: buildPrompt(note, lang, allowQuestion) },
           ],
         }],
       }),
@@ -262,7 +273,7 @@ const claude = {
 const OPENAI = 'https://api.openai.com/v1';
 
 const openai = {
-  async analyze({ key, model, imageBase64, note, lang }) {
+  async analyze({ key, model, imageBase64, note, lang, allowQuestion }) {
     requireKey(key);
     const body = await request(`${OPENAI}/chat/completions`, {
       method: 'POST',
@@ -273,7 +284,7 @@ const openai = {
         messages: [{
           role: 'user',
           content: [
-            { type: 'text', text: buildPrompt(note, lang) },
+            { type: 'text', text: buildPrompt(note, lang, allowQuestion) },
             { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
           ],
         }],

@@ -121,6 +121,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .photo-empty { display: grid; justify-items: center; gap: 6px; padding: 16px; text-align: center; color: var(--muted); }
 .photo-empty strong { color: var(--text); font-size: 18px; }
 
+.clarify { margin-top: 12px; padding: 14px; display: grid; gap: 10px; justify-items: start; }
+.clarify-question { margin: 0; font-weight: 600; }
+.clarify-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.clarify .hint { margin: 0; }
+
 .label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; color: var(--muted); }
 .note-wrap { margin-bottom: 14px; }
 .note-row { display: flex; gap: 8px; align-items: flex-start; }
