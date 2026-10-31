@@ -79,8 +79,8 @@ const LANG_RULES = {
 };
 
 const QUESTION_RULES = {
-  ask: `- If you cannot tell the kind of meat (chicken, turkey, duck, pork, beef...) with reasonable certainty from the photo and the user's information, or another ingredient whose identity changes the calories a lot, do not guess: return an empty "items" array, one short question in "question" (in the language below) and 2–4 likely answers in "options". Ask only when it really matters; otherwise "question" is "" and "options" is [].`,
-  noAsk: `- Do not ask questions: "question" must be "" and "options" []. If the kind of meat or another ingredient stays uncertain, pick the most likely one and say so in "note".`,
+  ask: `- If you cannot tell the kind of meat (chicken, turkey, duck, pork, beef...) with reasonable certainty from the photo and the user's information, or another ingredient whose identity changes the calories a lot, do not guess: return an empty "items" array, one short question in "question" (in the language below) and 2–4 concrete likely answers in "options" (e.g. "kuřecí", "krůtí", "kachní"), never a catch-all like "other" (the app adds its own). Ask only when it really matters; otherwise "question" is "" and "options" is [].`,
+  noAsk: `- Do not ask questions: "question" must be "" and "options" []. If the user's information says what the meat or another ingredient is, use exactly that, even if the photo suggests otherwise. If it stays uncertain, pick the most likely one and say so in "note".`,
 };
 
 export function buildPrompt(note, lang, allowQuestion = false) {

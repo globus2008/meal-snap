@@ -3,7 +3,7 @@ import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
 import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, ktSearch, rankCandidates, bestMatch, md5 } from './kt.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 const HISTORY_MAX = 30;
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -211,7 +211,27 @@ function showClarify(question, options) {
     });
     box.appendChild(b);
   }
+  // None of the offered answers fits: the user writes it in the note.
+  const other = Object.assign(document.createElement('button'), { type: 'button', className: 'chip', textContent: t('clarify.other') });
+  other.addEventListener('click', () => {
+    const note = $('#note');
+    note.value = [note.value.trim(), `${question} `].filter(Boolean).join('\n');
+    note.focus();
+    note.setSelectionRange(note.value.length, note.value.length);
+    setStatus($('#status'), t('clarify.writeAnswer'));
+  });
+  box.appendChild(other);
   $('#clarify').hidden = false;
+}
+
+// Back from the result to the composer with the same photo and note, to correct and analyze again.
+function reanalyze() {
+  $('#note').value = current.userNote || '';
+  $('#result').hidden = true;
+  $('#composer').hidden = false;
+  setStatus($('#status'), t('result.reanalyzeHint'));
+  window.scrollTo({ top: 0 });
+  $('#note').focus();
 }
 
 async function analyze() {
@@ -257,6 +277,13 @@ async function analyze() {
       provider: settings.provider,
       model: currentModel(),
     };
+    // Analyzing the same photo again replaces its earlier breakdown (keeping whether it was logged).
+    const prev = history.findIndex((h) => h.id === photo.entryId);
+    if (prev >= 0) {
+      if (history[prev].kt) current.kt = history[prev].kt;
+      history.splice(prev, 1);
+    }
+    photo.entryId = current.id;
     history.unshift(current);
     saveHistory();
     setStatus($('#status'), '');
@@ -319,6 +346,7 @@ function showResult() {
   const conf = $('#confidence');
   conf.textContent = t(`confidence.${current.confidence}`);
   conf.className = `badge ${current.confidence}`;
+  $('#reanalyze').hidden = !photo || photo.entryId !== current.id; // only while its photo is still loaded
   $('#result-thumb').hidden = !current.thumb;
   if (current.thumb) $('#result-thumb').src = current.thumb;
   $('#ai-note').textContent = current.note || '';
@@ -400,6 +428,7 @@ function wireResult() {
 
   $('#dish').addEventListener('input', (e) => { current.dish = e.target.value; persistCurrent(); });
   $('#new-photo').addEventListener('click', resetComposer);
+  $('#reanalyze').addEventListener('click', reanalyze);
 }
 
 // ---------- Kalorické tabulky export ----------

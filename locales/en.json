@@ -15,6 +15,8 @@
   "snap.noteHint": "Tip: you can also dictate with the microphone key on your keyboard.",
   "snap.analyze": "Analyze meal",
   "clarify.hint": "Or write the answer in the note and tap Analyze meal.",
+  "clarify.other": "Something else…",
+  "clarify.writeAnswer": "Finish the answer in the note and tap Analyze meal.",
   "clarify.skip": "Analyze without answering",
   "snap.analyzing": "Analyzing with {provider}…",
 
@@ -38,6 +40,8 @@
   "result.name": "Food name",
   "result.grams": "Weight in grams",
   "result.disclaimer": "Values are AI estimates. Check the grams before you log them.",
+  "result.reanalyze": "Correct the note and analyze again",
+  "result.reanalyzeHint": "Add what the AI got wrong to the note (e.g. it is turkey) and tap Analyze meal.",
   "result.newPhoto": "New photo",
 
   "history.title": "History",
