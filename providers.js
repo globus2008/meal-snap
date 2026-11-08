@@ -89,6 +89,7 @@ export function buildPrompt(note, lang, allowQuestion = false) {
 Rules:
 - Use generic food names and include the preparation state (e.g. "rice, cooked", "chicken breast, grilled", "potatoes, boiled").
 - Estimate the weight in grams of each ingredient as it is on the plate (cooked weight). Use the plate, cutlery and other objects for scale.
+- Count only the edible part. For meat on the bone (chicken or turkey legs, drumsticks, wings, ribs, chops) estimate the meat and skin without the bones, typically 60–75 % of the whole piece; likewise leave out fish bones, shells, fruit stones and peels that are not eaten. Mention in "note" that the bones were left out.
 - Include hidden ingredients that are typically used: cooking oil, butter, sauces, dressings, sugar, breading.
 - For each ingredient give typical nutrition values per 100 g in that preparation state: kcal, protein, carbohydrates, fat (grams).
 - "search_cs": always in Czech, whatever the language below: a short search term (1–3 words) for finding the ingredient in the Czech food database "Kalorické tabulky", main word first, e.g. "rýže vařená", "kuřecí stehno pečené", "olej řepkový", "brambory vařené". It names this one ingredient only, never a dish or its sides or sauce ("kuřecí stehno pečené", not "kuřecí stehno s rýží" or "BBQ kuřecí stehno"), because the other parts of the plate are separate items.
