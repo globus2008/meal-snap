@@ -3,7 +3,7 @@ import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
 import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, ktSearch, rankCandidates, bestMatch, md5 } from './kt.js';
 
-const VERSION = '1.4.2';
+const VERSION = '1.5.0';
 const HISTORY_MAX = 30;
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -312,6 +312,28 @@ function updateTotals() {
   $('#total-p').textContent = fmt(sum.p, 1);
   $('#total-c').textContent = fmt(sum.c, 1);
   $('#total-f').textContent = fmt(sum.f, 1);
+  const tg = $('#total-grams');
+  if (document.activeElement !== tg) tg.value = Math.round(totalGrams(current.items));
+}
+
+function totalGrams(items) {
+  return items.reduce((a, it) => a + (it.grams || 0), 0);
+}
+
+// Scales every item from the weights it had when editing started, so typing digit by digit
+// (or passing through 0 or an empty field) never loses the ratios. Rounds to whole grams and
+// gives the rounding remainder to the largest item so the items add up to the typed total.
+function scaleToTotal(base, target) {
+  const baseTotal = base.reduce((a, g) => a + g, 0);
+  if (!(baseTotal > 0)) return false;
+  const grams = base.map((g) => Math.round(g * target / baseTotal));
+  const diff = Math.round(target) - grams.reduce((a, g) => a + g, 0);
+  if (diff) {
+    const big = base.indexOf(Math.max(...base));
+    grams[big] = Math.max(0, grams[big] + diff);
+  }
+  current.items.forEach((it, i) => { it.grams = grams[i]; });
+  return true;
 }
 
 function updateItemRow(li, it) {
@@ -409,6 +431,24 @@ function wireResult() {
       d.hidden = !d.hidden;
     }
   });
+
+  const totalInput = $('#total-grams');
+  let baseGrams = null; // item weights when the total started being edited
+  totalInput.addEventListener('focus', () => { baseGrams = current.items.map((it) => it.grams || 0); });
+  totalInput.addEventListener('input', () => {
+    const n = parseFloat(String(totalInput.value).replace(',', '.'));
+    if (!baseGrams || !Number.isFinite(n) || n < 0) return;
+    if (!scaleToTotal(baseGrams, n)) return;
+    document.querySelectorAll('#items .item').forEach((li) => {
+      const it = current.items[+li.dataset.index];
+      $('.grams input', li).value = it.grams;
+      updateItemRow(li, it);
+    });
+    updateTotals();
+    persistCurrent();
+  });
+  totalInput.addEventListener('blur', () => { baseGrams = null; updateTotals(); });
+  totalInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') totalInput.blur(); });
 
   $('#add-item').addEventListener('click', () => {
     current.items.push({ name: '', grams: 100, kcal_100g: 0, protein_100g: 0, carbs_100g: 0, fat_100g: 0 });

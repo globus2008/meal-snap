@@ -39,6 +39,8 @@
   "result.per100": "Hodnoty na 100 g:",
   "result.name": "Název potraviny",
   "result.grams": "Hmotnost v gramech",
+  "result.totalWeight": "Celková váha",
+  "result.totalWeightHint": "Znáte váhu celého talíře? Změňte ji a všechny položky se poměrově přepočtou.",
   "result.disclaimer": "Hodnoty jsou odhad AI. Než je zapíšete, zkontrolujte gramy.",
   "result.reanalyze": "Opravit poznámku a rozložit znovu",
   "result.reanalyzeHint": "Do poznámky připište, co AI určila špatně (např. je to krůtí maso), a klepněte na Rozložit jídlo.",

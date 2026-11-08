@@ -39,6 +39,8 @@
   "result.per100": "Values per 100 g:",
   "result.name": "Food name",
   "result.grams": "Weight in grams",
+  "result.totalWeight": "Total weight",
+  "result.totalWeightHint": "Know the weight of the whole plate? Change it and all items scale proportionally.",
   "result.disclaimer": "Values are AI estimates. Check the grams before you log them.",
   "result.reanalyze": "Correct the note and analyze again",
   "result.reanalyzeHint": "Add what the AI got wrong to the note (e.g. it is turkey) and tap Analyze meal.",
