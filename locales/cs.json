@@ -52,6 +52,7 @@
   "history.confirmClear": "Smazat všechna uložená jídla?",
   "history.untitled": "Jídlo",
   "history.items": "položek: {n}",
+  "history.showPhoto": "Zvětšit fotku",
 
   "settings.title": "Nastavení",
   "settings.provider": "Poskytovatel AI",

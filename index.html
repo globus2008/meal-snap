@@ -65,7 +65,7 @@
 
       <div id="result" hidden>
         <div class="result-head">
-          <img id="result-thumb" alt="" hidden>
+          <img id="result-thumb" alt="" data-i18n-aria="history.showPhoto" hidden>
           <div>
             <input id="dish" class="dish" type="text" aria-label="Dish">
             <span id="confidence" class="badge"></span>
@@ -190,6 +190,11 @@
       <span data-i18n="tab.settings">Settings</span>
     </button>
   </nav>
+
+  <dialog id="lightbox" class="lightbox">
+    <img id="lightbox-img" alt="">
+    <p id="lightbox-caption"></p>
+  </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 

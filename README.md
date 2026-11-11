@@ -5,7 +5,7 @@ Take a photo of a meal and get it broken down into individual foods with estimat
 - Installable web app (PWA). Works on iPhone with no App Store and no Mac: open it in Safari, then Share → Add to Home Screen.
 - English and Czech UI.
 - Pick an AI provider: **Google Gemini** (free tier), **Anthropic Claude** or **OpenAI** (paid). Each user enters their own API key, which is stored only in their browser.
-- Edit the grams and recalculate calories, copy single food names or the whole list, and keep a history of the last 30 meals.
+- Edit the grams and recalculate calories, copy single food names or the whole list, and keep a history of the last 200 meals with photos you can tap to enlarge.
 - Voice note: live dictation where the browser supports it. In iOS home-screen apps the recording is transcribed by the AI provider instead.
 - Log the breakdown straight into the *Kalorické tabulky* food diary (one-way), with the date and meal of the day (breakfast … second dinner) preselected from the time of the photo. This needs a small proxy, see below.
 

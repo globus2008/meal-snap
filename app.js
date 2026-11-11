@@ -3,8 +3,8 @@ import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
 import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, ktSearch, rankCandidates, bestMatch, md5 } from './kt.js';
 
-const VERSION = '1.5.0';
-const HISTORY_MAX = 30;
+const VERSION = '1.6.0';
+const HISTORY_MAX = 200;
 const $ = (sel, root = document) => root.querySelector(sel);
 
 // ---------- storage (always guarded: private mode / blocked storage must not break the app) ----------
@@ -29,15 +29,57 @@ const currentModel = () => (settings.models[settings.provider] || '').trim() || 
 let history = store.get('ms.history', []);
 function saveHistory() {
   history = history.slice(0, HISTORY_MAX);
+  photos.prune();
   if (store.set('ms.history', history)) return;
   // Storage full: drop thumbnails, then retry.
   history.forEach((h) => { delete h.thumb; });
   store.set('ms.history', history);
 }
 
+// Larger meal photos for the history, kept in IndexedDB (too big for localStorage), keyed by
+// history entry id. Every call is guarded: without IndexedDB the app falls back to the thumbnail.
+const photos = {
+  db: null,
+  open() {
+    this.db ??= new Promise((resolve, reject) => {
+      const req = indexedDB.open('meal-snap', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('photos');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return this.db;
+  },
+  async run(mode, fn) {
+    try {
+      const db = await this.open();
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction('photos', mode);
+        const req = fn(tx.objectStore('photos'));
+        tx.oncomplete = () => resolve(req?.result);
+        tx.onerror = tx.onabort = () => reject(tx.error);
+      });
+    } catch (e) {
+      console.warn('Photo storage unavailable', e);
+      return undefined;
+    }
+  },
+  get: (id) => photos.run('readonly', (s) => s.get(id)),
+  put: (id, blob) => photos.run('readwrite', (s) => s.put(blob, id)),
+  // Delete photos whose history entry is gone (trimmed, replaced or cleared).
+  prune: () => photos.run('readwrite', (s) => {
+    const keep = new Set(history.map((h) => h.id));
+    s.openKeyCursor().onsuccess = (e) => {
+      const c = e.target.result;
+      if (!c) return;
+      if (!keep.has(c.key)) s.delete(c.key);
+      c.continue();
+    };
+  }),
+};
+
 // ---------- state ----------
 
-let photo = null;     // { base64, thumb, previewUrl }
+let photo = null;     // { base64, thumb, view, previewUrl }
 let current = null;   // history entry shown in the result view
 
 // ---------- utils ----------
@@ -100,8 +142,10 @@ function drawScaled(img, maxSide, quality) {
   c.width = Math.round(img.naturalWidth * scale);
   c.height = Math.round(img.naturalHeight * scale);
   c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-  return c.toDataURL('image/jpeg', quality);
+  return c;
 }
+const scaledDataUrl = (img, maxSide, quality) => drawScaled(img, maxSide, quality).toDataURL('image/jpeg', quality);
+const scaledBlob = (img, maxSide, quality) => new Promise((resolve) => drawScaled(img, maxSide, quality).toBlob(resolve, 'image/jpeg', quality));
 
 // EXIF DateTimeOriginal (local time) of a JPEG, or null. Reads only the first 128 KB.
 async function exifTakenAt(file) {
@@ -159,8 +203,9 @@ async function onPhotoChosen(file) {
     const { img, url } = await loadImage(file);
     if (photo?.previewUrl) URL.revokeObjectURL(photo.previewUrl);
     photo = {
-      base64: drawScaled(img, 1024, 0.8).split(',')[1],
-      thumb: drawScaled(img, 120, 0.7),
+      base64: scaledDataUrl(img, 1024, 0.8).split(',')[1],
+      thumb: scaledDataUrl(img, 120, 0.7),
+      view: await scaledBlob(img, 900, 0.75),
       previewUrl: url,
       takenAt: await photoTakenAt(file),
     };
@@ -285,6 +330,7 @@ async function analyze() {
     }
     photo.entryId = current.id;
     history.unshift(current);
+    if (photo.view) await photos.put(current.id, photo.view);
     saveHistory();
     setStatus($('#status'), '');
     showResult();
@@ -370,6 +416,7 @@ function showResult() {
   conf.className = `badge ${current.confidence}`;
   $('#reanalyze').hidden = !photo || photo.entryId !== current.id; // only while its photo is still loaded
   $('#result-thumb').hidden = !current.thumb;
+  $('#result-thumb').dataset.id = current.id;
   if (current.thumb) $('#result-thumb').src = current.thumb;
   $('#ai-note').textContent = current.note || '';
   renderItems();
@@ -759,7 +806,16 @@ function renderHistory() {
     li.dataset.id = h.id;
     li.tabIndex = 0;
     li.setAttribute('role', 'button');
-    const media = h.thumb ? Object.assign(document.createElement('img'), { src: h.thumb, alt: '' }) : Object.assign(document.createElement('div'), { className: 'ph' });
+    let media;
+    if (h.thumb) {
+      media = document.createElement('button');
+      media.type = 'button';
+      media.className = 'thumb';
+      media.setAttribute('aria-label', t('history.showPhoto'));
+      media.appendChild(Object.assign(document.createElement('img'), { src: h.thumb, alt: '' }));
+    } else {
+      media = Object.assign(document.createElement('div'), { className: 'ph' });
+    }
     const meta = document.createElement('div');
     meta.className = 'meta';
     const strong = document.createElement('strong');
@@ -783,9 +839,15 @@ function wireHistory() {
     showView('snap');
     showResult();
   };
-  $('#history-list').addEventListener('click', (e) => { const li = e.target.closest('li'); if (li) open(li); });
+  $('#history-list').addEventListener('click', (e) => {
+    const li = e.target.closest('li');
+    if (!li) return;
+    if (e.target.closest('.thumb')) showPhoto(history.find((x) => x.id === li.dataset.id));
+    else open(li);
+  });
   $('#history-list').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { const li = e.target.closest('li'); if (li) { e.preventDefault(); open(li); } }
+    if (e.target.tagName !== 'LI') return; // the photo button handles its own keys
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e.target); }
   });
   $('#history-clear').addEventListener('click', () => {
     if (!confirm(t('history.confirmClear'))) return;
@@ -794,6 +856,38 @@ function wireHistory() {
     renderHistory();
     if (current) resetComposer();
   });
+}
+
+// ---------- photo viewer ----------
+
+// Full-screen view of a meal photo; the stored larger photo, else the thumbnail (older meals).
+async function showPhoto(h) {
+  if (!h?.thumb) return;
+  const box = $('#lightbox');
+  const img = $('#lightbox-img');
+  closePhoto();
+  img.src = h.thumb;
+  const dateFmt = new Intl.DateTimeFormat(getLang() === 'cs' ? 'cs-CZ' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' });
+  $('#lightbox-caption').textContent = `${h.dish || t('history.untitled')} · ${dateFmt.format(new Date(h.takenAt || h.date))}`;
+  box.showModal();
+  const blob = await photos.get(h.id);
+  if (blob && box.open) {
+    img.dataset.url = URL.createObjectURL(blob);
+    img.src = img.dataset.url;
+  }
+}
+
+function closePhoto() {
+  const img = $('#lightbox-img');
+  if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
+  delete img.dataset.url;
+  if ($('#lightbox').open) $('#lightbox').close();
+}
+
+function wireLightbox() {
+  $('#lightbox').addEventListener('click', closePhoto);
+  $('#lightbox').addEventListener('close', closePhoto);
+  $('#result-thumb').addEventListener('click', () => showPhoto(current));
 }
 
 // ---------- settings view ----------
@@ -916,6 +1010,7 @@ async function init() {
   wireResult();
   wireVoice();
   wireHistory();
+  wireLightbox();
   wireSettings();
   wireKtSettings();
   $('#kt-send').addEventListener('click', sendToKt);

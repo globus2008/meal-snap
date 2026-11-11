@@ -51,6 +51,7 @@
   "history.clear": "Clear history",
   "history.confirmClear": "Delete all saved meals?",
   "history.untitled": "Meal",
+  "history.showPhoto": "Enlarge photo",
   "history.items": "{n} items",
 
   "settings.title": "Settings",
