@@ -71,6 +71,10 @@
   "settings.model": "Model",
   "settings.modelHint": "Keep the default unless you know you need a different one.",
   "settings.language": "Language",
+  "settings.share": "Share the app",
+  "settings.shareCopy": "Copy link",
+  "settings.shareHint": "Send this link to anyone who wants to use the app too.",
+  "settings.shareSend": "Send link…",
   "settings.privacy": "Your key is stored only on this device. Photos and notes are sent straight to the AI provider you picked, never to the author of this app. Your Kalorické tabulky login goes through a proxy (the default one is run by the author of this app and stores nothing). The password isn't stored on the device, only its MD5 hash. <b>On Gemini's free tier, Google may use your data to improve its products.</b>",
   "settings.help": "Help and setup guide",
 

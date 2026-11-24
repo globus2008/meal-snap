@@ -3,7 +3,7 @@ import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
 import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, ktSearch, rankCandidates, bestMatch, md5 } from './kt.js';
 
-const VERSION = '1.6.0';
+const VERSION = '1.6.1';
 const HISTORY_MAX = 200;
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -994,10 +994,36 @@ async function changeLang(code) {
   if ($('#view-history').classList.contains('active')) renderHistory();
 }
 
+// ---------- share link ----------
+
+// The app's own address, derived from where it is served, so self-hosted copies share their own URL.
+function appUrl() {
+  const u = new URL('./', location.href);
+  u.search = '';
+  u.hash = '';
+  return u.href;
+}
+
+function wireShareLink() {
+  const url = appUrl();
+  const input = $('#share-url');
+  input.value = url;
+  input.addEventListener('focus', () => input.select());
+  $('#share-copy').addEventListener('click', () => copyText(url));
+  if (navigator.share) {
+    const btn = $('#share-native');
+    btn.hidden = false;
+    btn.addEventListener('click', () => {
+      navigator.share({ title: 'Meal Snap', url }).catch(() => {});
+    });
+  }
+}
+
 // ---------- boot ----------
 
 async function init() {
   $('#app-version').textContent = VERSION;
+  wireShareLink();
   document.addEventListener('click', (e) => {
     const go = e.target.closest('[data-goto]');
     if (go) showView(go.dataset.goto);

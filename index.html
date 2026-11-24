@@ -166,6 +166,18 @@
       </div>
 
       <div class="card field-stack">
+        <label for="share-url" class="label" data-i18n="settings.share">Share the app</label>
+        <div class="key-row">
+          <input id="share-url" type="url" readonly autocomplete="off" spellcheck="false">
+          <button id="share-copy" type="button" class="icon-btn" data-i18n-aria="settings.shareCopy">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 16H8V7h11v14Z"/></svg>
+          </button>
+        </div>
+        <small class="hint" data-i18n="settings.shareHint">Send this link to anyone who wants to use the app too.</small>
+        <button id="share-native" type="button" class="secondary" data-i18n="settings.shareSend" hidden>Send link…</button>
+      </div>
+
+      <div class="card field-stack">
         <label for="lang-select" class="label" data-i18n="settings.language">Language</label>
         <select id="lang-select"></select>
       </div>

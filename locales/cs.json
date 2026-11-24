@@ -71,6 +71,10 @@
   "settings.model": "Model",
   "settings.modelHint": "Výchozí hodnotu neměňte, pokud nevíte, že potřebujete jiný model.",
   "settings.language": "Jazyk",
+  "settings.share": "Sdílet aplikaci",
+  "settings.shareCopy": "Zkopírovat odkaz",
+  "settings.shareHint": "Pošlete tento odkaz komukoli, kdo chce aplikaci také používat.",
+  "settings.shareSend": "Poslat odkaz…",
   "settings.privacy": "Klíč se ukládá jen v tomto zařízení. Fotky a poznámky jdou přímo k vybranému poskytovateli AI, nikdy autorovi aplikace. Přihlášení do Kalorických tabulek jde přes proxy (výchozí provozuje autor aplikace a nic neukládá). Heslo se v zařízení neukládá, jen jeho otisk (MD5). <b>Ve verzi Gemini zdarma může Google data použít ke zlepšování svých služeb.</b>",
   "settings.help": "Nápověda a návod k nastavení",
 
