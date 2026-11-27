@@ -121,27 +121,6 @@
     <section id="view-history" class="view" aria-labelledby="tab-history">
       <h1 data-i18n="history.title">History</h1>
 
-      <div id="history-summary" class="card summary" hidden>
-        <div class="stats">
-          <div class="stat">
-            <span class="stat-label" data-i18n="history.summary.avg7">Average, 7 days</span>
-            <span class="stat-value"><strong id="sum-avg7">–</strong> <span data-i18n="history.summary.perDay">kcal/day</span></span>
-            <small id="sum-avg7-days" class="stat-note"></small>
-          </div>
-          <div class="stat">
-            <span class="stat-label" data-i18n="history.summary.avg30">Average, 30 days</span>
-            <span class="stat-value"><strong id="sum-avg30">–</strong> <span data-i18n="history.summary.perDay">kcal/day</span></span>
-            <small id="sum-avg30-days" class="stat-note"></small>
-          </div>
-          <div class="stat">
-            <span class="stat-label" data-i18n="history.summary.meals">Meals, 7 days</span>
-            <span class="stat-value"><strong id="sum-meals">0</strong></span>
-          </div>
-        </div>
-        <p id="sum-readout" class="readout" aria-live="polite"></p>
-        <div id="sum-chart" class="chart" role="group" data-i18n-aria="history.summary.chartLabel"></div>
-      </div>
-
       <div id="history-tools" class="history-tools" hidden>
         <input id="history-search" type="search" autocomplete="off" data-i18n-placeholder="history.search" data-i18n-aria="history.search">
         <small id="history-found" class="hint"></small>
@@ -152,6 +131,48 @@
       <p id="history-empty" class="empty" data-i18n="history.empty">No meals yet. Analyzed meals will appear here.</p>
       <button id="history-more" type="button" class="secondary more" data-i18n="history.showOlder" hidden>Show older</button>
       <button id="history-clear" type="button" class="danger" data-i18n="history.clear" hidden>Clear history</button>
+    </section>
+
+    <!-- ===== Overview ===== -->
+    <section id="view-overview" class="view" aria-labelledby="tab-overview">
+      <h1 data-i18n="overview.title">Overview</h1>
+
+      <div id="overview-summary" class="card summary" hidden>
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-label" data-i18n="overview.summary.avg7">Average, 7 days</span>
+            <span class="stat-value"><strong id="sum-avg7">–</strong> <span data-i18n="overview.summary.perDay">kcal/day</span></span>
+            <small id="sum-avg7-days" class="stat-note"></small>
+          </div>
+          <div class="stat">
+            <span class="stat-label" data-i18n="overview.summary.avg30">Average, 30 days</span>
+            <span class="stat-value"><strong id="sum-avg30">–</strong> <span data-i18n="overview.summary.perDay">kcal/day</span></span>
+            <small id="sum-avg30-days" class="stat-note"></small>
+          </div>
+          <div class="stat">
+            <span class="stat-label" data-i18n="overview.summary.meals">Meals, 7 days</span>
+            <span class="stat-value"><strong id="sum-meals">0</strong></span>
+          </div>
+        </div>
+        <p id="sum-readout" class="readout" aria-live="polite"></p>
+        <div id="sum-chart" class="chart" role="group" data-i18n-aria="overview.summary.chartLabel"></div>
+      </div>
+
+      <div id="macro-card" class="card macro-card" hidden>
+        <div class="macro-head">
+          <h2 class="card-title" data-i18n="overview.macros.title">Protein, carbs, fat</h2>
+          <div class="seg" role="group" data-i18n-aria="overview.macros.period">
+            <button type="button" data-period="7" data-i18n="overview.macros.period7">7 days</button>
+            <button type="button" data-period="30" data-i18n="overview.macros.period30">30 days</button>
+          </div>
+        </div>
+        <small id="macro-days" class="stat-note"></small>
+        <div id="macro-rows" class="macro-rows"></div>
+        <p id="macro-verdict" class="macro-verdict" aria-live="polite"></p>
+        <small class="hint" data-i18n="overview.macros.source"></small>
+      </div>
+
+      <p id="overview-empty" class="empty" data-i18n="overview.empty">No meals yet.</p>
     </section>
 
     <!-- ===== Settings ===== -->
@@ -234,6 +255,10 @@
     <button id="tab-history" role="tab" class="tab" data-goto="history" type="button">
       <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3Zm-1 5v5l4.25 2.52.77-1.28L13.5 12.2V8H12Z"/></svg>
       <span data-i18n="tab.history">History</span>
+    </button>
+    <button id="tab-overview" role="tab" class="tab" data-goto="overview" type="button">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M11 2.05A10 10 0 1 0 21.95 13H11V2.05Zm2 0V11h8.95A10 10 0 0 0 13 2.05Z"/></svg>
+      <span data-i18n="tab.overview">Overview</span>
     </button>
     <button id="tab-settings" role="tab" class="tab" data-goto="settings" type="button">
       <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 21h4l.4-2.9c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5L19.4 13ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></svg>

@@ -3,7 +3,7 @@ import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
 import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, ktSearch, rankCandidates, bestMatch, md5 } from './kt.js';
 
-const VERSION = '1.7.0';
+const VERSION = '1.8.0';
 const $ = (sel, root = document) => root.querySelector(sel);
 
 // ---------- storage (always guarded: private mode / blocked storage must not break the app) ----------
@@ -965,6 +965,7 @@ const mapUrl = ({ lat, lon }) => `https://mapy.com/fnc/v1/showmap?mapset=basic&c
 let historyQuery = '';
 let historyDays = 30;   // day groups shown; "Show older" adds more
 let chartPick = null;   // day selected in the chart
+let macroPeriod = store.get('ms.macroPeriod', 7) === 30 ? 30 : 7; // days in the macro breakdown
 
 const locale = () => (getLang() === 'cs' ? 'cs-CZ' : 'en-US');
 const fold = (s) => (s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
@@ -1057,9 +1058,20 @@ function lastDays(n) {
   return out;
 }
 
-function renderSummary(all) {
+const historyEntries = () => history.map((h) => ({ h, time: mealTime(h), ...mealSlot(h), totals: entryTotals(h) }));
+
+// Day totals { kcal, p, c, f } keyed by ISO day.
+function totalsByDay(all) {
   const byDay = new Map();
-  for (const e of all) byDay.set(e.day, (byDay.get(e.day) || 0) + e.totals.kcal);
+  for (const e of all) {
+    const a = byDay.get(e.day) || { kcal: 0, p: 0, c: 0, f: 0 };
+    byDay.set(e.day, { kcal: a.kcal + e.totals.kcal, p: a.p + e.totals.p, c: a.c + e.totals.c, f: a.f + e.totals.f });
+  }
+  return byDay;
+}
+
+function renderSummary(all, days) {
+  const byDay = new Map([...days].map(([k, v]) => [k, v.kcal]));
   // Averages count only days with a record: a day without photos is unknown, not zero.
   const avg = (n) => {
     const vals = lastDays(n).filter((k) => byDay.has(k)).map((k) => byDay.get(k));
@@ -1067,7 +1079,7 @@ function renderSummary(all) {
   };
   const stat = (id, a) => {
     $(`#${id}`).textContent = a ? fmt(a.kcal) : '–';
-    $(`#${id}-days`).textContent = a ? t('history.summary.days', { n: a.n }) : t('history.summary.noData');
+    $(`#${id}-days`).textContent = a ? t('overview.summary.days', { n: a.n }) : t('overview.summary.noData');
   };
   stat('sum-avg7', avg(7));
   stat('sum-avg30', avg(30));
@@ -1087,7 +1099,7 @@ function renderSummary(all) {
     col.dataset.day = k;
     col.classList.toggle('picked', chartPick === k);
     col.classList.toggle('today', k === today);
-    col.setAttribute('aria-label', `${dayLabel(k, true)}: ${v ? `${fmt(v)} kcal` : t('history.summary.noRecord')}`);
+    col.setAttribute('aria-label', `${dayLabel(k, true)}: ${v ? `${fmt(v)} kcal` : t('overview.summary.noRecord')}`);
     const bar = el('span', v ? 'bar' : 'bar none');
     if (v) bar.style.height = `${Math.max(3, (v / max) * 100)}%`;
     const plot = el('span', 'plot');
@@ -1097,8 +1109,113 @@ function renderSummary(all) {
   }
   const picked = last.includes(chartPick) ? chartPick : null;
   $('#sum-readout').textContent = picked
-    ? `${dayLabel(picked, true)}: ${byDay.get(picked) ? `${fmt(byDay.get(picked))} kcal` : t('history.summary.noRecord')}`
-    : t('history.summary.chart', { max: fmt(max) });
+    ? `${dayLabel(picked, true)}: ${byDay.get(picked) ? `${fmt(byDay.get(picked))} kcal` : t('overview.summary.noRecord')}`
+    : t('overview.summary.chart', { max: fmt(max) });
+}
+
+// Recommended share of energy (%) from each macronutrient for adults (EFSA reference intake
+// ranges for carbs and fat; 10-20 % is the usual protein range for a mixed diet).
+const MACRO_REF = { p: [10, 20], c: [45, 60], f: [20, 35] };
+const KCAL_PER_G = { p: 4, c: 4, f: 9 };
+const TRACK_MAX = 70; // the bars show 0-70 % of energy
+
+const joinList = (parts) => {
+  try { return new Intl.ListFormat(locale(), { type: 'conjunction' }).format(parts); } catch { return parts.join(', '); }
+};
+
+function renderMacros(days) {
+  const keys = lastDays(macroPeriod).filter((k) => days.has(k));
+  document.querySelectorAll('#macro-card .seg button').forEach((b) => {
+    b.setAttribute('aria-pressed', String(Number(b.dataset.period) === macroPeriod));
+  });
+  const rows = $('#macro-rows');
+  rows.textContent = '';
+  const verdict = $('#macro-verdict');
+  verdict.className = 'macro-verdict';
+  const sum = keys.reduce((a, k) => {
+    const d = days.get(k);
+    return { p: a.p + d.p, c: a.c + d.c, f: a.f + d.f };
+  }, { p: 0, c: 0, f: 0 });
+  const energy = { p: sum.p * KCAL_PER_G.p, c: sum.c * KCAL_PER_G.c, f: sum.f * KCAL_PER_G.f };
+  const total = energy.p + energy.c + energy.f;
+  $('#macro-days').textContent = keys.length ? t('overview.summary.days', { n: keys.length }) : '';
+  if (!keys.length || total <= 0) {
+    verdict.textContent = t('overview.macros.noData', { n: macroPeriod });
+    return;
+  }
+
+  const off = { low: [], high: [] };
+  for (const m of ['p', 'c', 'f']) {
+    const pct = (energy[m] / total) * 100;
+    const [lo, hi] = MACRO_REF[m];
+    const state = pct < lo ? 'low' : pct > hi ? 'high' : 'ok';
+    if (state !== 'ok') off[state].push(t(`overview.macros.gen.${m}`));
+    const name = t(`overview.macros.name.${m}`);
+    const grams = `${fmt(sum[m] / keys.length)} ${t('overview.macros.perDay')}`;
+    const row = el('div', 'macro-row');
+    row.setAttribute('role', 'img');
+    row.setAttribute('aria-label', `${name}: ${grams}, ${t('overview.macros.share', { pct: fmt(pct), min: lo, max: hi })}, ${t(`overview.macros.${state}`)}`);
+    const line = el('div', 'macro-line');
+    const pctEl = el('span', 'macro-pct');
+    pctEl.append(el('strong', null, `${fmt(pct)} %`), ' ', el('span', `macro-state ${state}`, t(`overview.macros.${state}`)));
+    line.append(el('span', 'macro-name', name), el('span', 'macro-grams', grams), pctEl);
+    const track = el('div', 'macro-track');
+    const band = el('span', 'macro-band');
+    band.style.left = `${(lo / TRACK_MAX) * 100}%`;
+    band.style.width = `${((hi - lo) / TRACK_MAX) * 100}%`;
+    const mark = el('span', `macro-mark ${state}`);
+    mark.style.left = `${(Math.min(pct, TRACK_MAX) / TRACK_MAX) * 100}%`;
+    track.append(band, mark);
+    row.append(line, track, el('small', 'macro-ref', t('overview.macros.ref', { min: lo, max: hi })));
+    rows.append(row);
+  }
+
+  const parts = [
+    ...off.high.map((what) => t('overview.macros.tooMuch', { what })),
+    ...off.low.map((what) => t('overview.macros.tooLittle', { what })),
+  ];
+  verdict.classList.add(parts.length ? 'off' : 'ok');
+  verdict.textContent = parts.length
+    ? t('overview.macros.verdict', { list: joinList(parts) })
+    : t('overview.macros.verdictOk');
+}
+
+function renderOverview() {
+  const has = history.length > 0;
+  $('#overview-empty').hidden = has;
+  $('#overview-summary').hidden = !has;
+  $('#macro-card').hidden = !has;
+  if (!has) return;
+  const all = historyEntries();
+  const days = totalsByDay(all);
+  renderSummary(all, days);
+  renderMacros(days);
+}
+
+function wireOverview() {
+  // The first tap on a bar shows its value, a second tap opens that day in History.
+  $('#sum-chart').addEventListener('click', (e) => {
+    const col = e.target.closest('.bar-col');
+    if (!col) return;
+    const day = col.dataset.day;
+    if (chartPick === day) {
+      historyQuery = '';
+      $('#history-search').value = '';
+      showView('history');
+      document.getElementById(`day-${day}`)?.scrollIntoView({ block: 'start' });
+      return;
+    }
+    chartPick = day;
+    renderOverview();
+    document.querySelector(`#sum-chart [data-day="${day}"]`)?.focus();
+  });
+  $('#macro-card .seg').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-period]');
+    if (!b) return;
+    macroPeriod = Number(b.dataset.period) === 30 ? 30 : 7;
+    store.set('ms.macroPeriod', macroPeriod);
+    renderOverview();
+  });
 }
 
 function renderHistory() {
@@ -1108,13 +1225,11 @@ function renderHistory() {
   $('#history-empty').hidden = has;
   $('#history-clear').hidden = !has;
   $('#history-tools').hidden = !has;
-  $('#history-summary').hidden = !has;
   $('#history-more').hidden = true;
   $('#history-nomatch').hidden = true;
   if (!has) return;
 
-  const all = history.map((h) => ({ h, time: mealTime(h), ...mealSlot(h), totals: entryTotals(h) }));
-  renderSummary(all);
+  const all = historyEntries();
 
   const q = fold(historyQuery.trim());
   const found = q ? all.filter(({ h }) => fold(h.dish).includes(q) || h.items.some((it) => fold(it.name).includes(q))) : all;
@@ -1191,19 +1306,6 @@ function wireHistory() {
   $('#history-more').addEventListener('click', () => {
     historyDays += 30;
     renderHistory();
-  });
-  // The first tap on a bar shows its value, a second tap jumps to that day.
-  $('#sum-chart').addEventListener('click', (e) => {
-    const col = e.target.closest('.bar-col');
-    if (!col) return;
-    const day = col.dataset.day;
-    if (chartPick === day) {
-      document.getElementById(`day-${day}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
-    }
-    chartPick = day;
-    renderHistory();
-    document.querySelector(`#sum-chart [data-day="${day}"]`)?.focus();
   });
   $('#history-clear').addEventListener('click', () => {
     if (!confirm(t('history.confirmClear'))) return;
@@ -1346,6 +1448,7 @@ function showView(name) {
     b.setAttribute('aria-selected', String(on));
   });
   if (name === 'history') renderHistory();
+  if (name === 'overview') renderOverview();
   if (name === 'snap' && current && !$('#result').hidden) renderKt();
   window.scrollTo({ top: 0 });
 }
@@ -1359,6 +1462,7 @@ async function changeLang(code) {
   wireKtSettings.refresh?.();
   if (current && !$('#result').hidden) showResult();
   if ($('#view-history').classList.contains('active')) renderHistory();
+  if ($('#view-overview').classList.contains('active')) renderOverview();
 }
 
 // ---------- share link ----------
@@ -1403,6 +1507,7 @@ async function init() {
   wireResult();
   wireVoice();
   wireHistory();
+  wireOverview();
   wireLightbox();
   wireSettings();
   wireKtSettings();
@@ -1412,6 +1517,7 @@ async function init() {
   photos.prune();
   navigator.storage?.persist?.().catch(() => {});
   if ($('#view-history').classList.contains('active')) renderHistory();
+  if ($('#view-overview').classList.contains('active')) renderOverview();
 
   if (!currentKey()) showView('settings');
 
