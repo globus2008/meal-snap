@@ -130,7 +130,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; color: var(--muted); }
 .note-wrap { margin-bottom: 14px; }
 .note-row { display: flex; gap: 8px; align-items: flex-start; }
-textarea, input[type="text"], input[type="password"], input[type="number"], input[type="url"], input[type="email"], input[type="date"], select {
+textarea, input[type="text"], input[type="password"], input[type="number"], input[type="url"], input[type="email"], input[type="date"], input[type="search"], select {
   width: 100%; min-height: 48px; padding: 11px 12px;
   border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
   font-size: 16px; /* prevents iOS zoom */
@@ -222,8 +222,58 @@ input[type="date"] { -webkit-appearance: none; appearance: none; text-align: lef
 .history .meta { flex: 1; min-width: 0; }
 .history .meta strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .history .meta small { color: var(--muted); }
+.history .meta small { display: block; }
+.history .side { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
 .history .kc { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.history .delete { width: 34px; height: 34px; margin-right: -6px; }
+.history .delete:hover { color: var(--danger); }
+.history .place {
+  display: flex; align-items: center; gap: 3px; min-width: 0; margin-top: 2px;
+  color: var(--muted); font-size: 13px; text-decoration: none;
+}
+.history .place span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history .place svg { flex: none; color: var(--accent); }
+.kt-badge { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 6px; background: var(--accent-soft); color: var(--text); white-space: nowrap; }
 .empty { color: var(--muted); text-align: center; padding: 32px 0; }
+
+.day { margin-bottom: 18px; scroll-margin-top: 64px; }
+.day-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  margin: 0 2px 8px; font-size: 16px;
+}
+.day-title::first-letter { text-transform: uppercase; }
+.day-totals { display: flex; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums; }
+.day-totals small { color: var(--muted); font-weight: 400; font-size: 13px; }
+.history-tools { margin-bottom: 14px; }
+.history-tools .hint:empty { display: none; }
+.more { margin-top: 4px; }
+.danger-link { display: block; margin: 14px auto 0; color: var(--danger); font-weight: 600; min-height: 44px; }
+
+/* history summary */
+.summary { padding: 14px 14px 10px; margin-bottom: 14px; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.stat { display: grid; gap: 2px; min-width: 0; }
+.stat-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.stat-value { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); }
+.stat-value strong { font-size: 22px; color: var(--text); }
+.stat-note { font-size: 12px; color: var(--muted); }
+.readout { margin: 12px 0 6px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.4em; }
+.readout::first-letter { text-transform: uppercase; }
+.chart { display: flex; align-items: stretch; height: 110px; }
+.bar-col {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 0 1px; border: 0; background: none; cursor: pointer; color: var(--muted);
+}
+.bar-col .plot { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--border); }
+.bar-col .bar { display: block; width: min(100%, 18px); background: var(--accent); border-radius: 4px 4px 0 0; }
+.bar-col .bar.none { height: 0; }
+.bar-col:hover .bar, .bar-col.picked .bar { background: color-mix(in srgb, var(--accent) 70%, var(--text)); }
+.bar-label { font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1; }
+.bar-col.today .bar-label { color: var(--text); font-weight: 700; }
+.bar-col.picked .bar-label { color: var(--text); text-decoration: underline; }
+
+.check-row { display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; }
+.check-row input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); flex: none; }
 
 /* settings */
 fieldset { margin: 0 0 12px; padding: 12px; }

@@ -113,14 +113,44 @@
         <button id="reanalyze" type="button" class="secondary reanalyze" data-i18n="result.reanalyze">Correct note and analyze again</button>
         <p class="disclaimer" data-i18n="result.disclaimer">Values are AI estimates. Check grams before logging.</p>
         <button id="new-photo" type="button" class="primary" data-i18n="result.newPhoto">New photo</button>
+        <button id="delete-current" type="button" class="link danger-link" data-i18n="history.deleteCurrent">Delete from history</button>
       </div>
     </section>
 
     <!-- ===== History ===== -->
     <section id="view-history" class="view" aria-labelledby="tab-history">
       <h1 data-i18n="history.title">History</h1>
-      <ul id="history-list" class="history"></ul>
+
+      <div id="history-summary" class="card summary" hidden>
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-label" data-i18n="history.summary.avg7">Average, 7 days</span>
+            <span class="stat-value"><strong id="sum-avg7">–</strong> <span data-i18n="history.summary.perDay">kcal/day</span></span>
+            <small id="sum-avg7-days" class="stat-note"></small>
+          </div>
+          <div class="stat">
+            <span class="stat-label" data-i18n="history.summary.avg30">Average, 30 days</span>
+            <span class="stat-value"><strong id="sum-avg30">–</strong> <span data-i18n="history.summary.perDay">kcal/day</span></span>
+            <small id="sum-avg30-days" class="stat-note"></small>
+          </div>
+          <div class="stat">
+            <span class="stat-label" data-i18n="history.summary.meals">Meals, 7 days</span>
+            <span class="stat-value"><strong id="sum-meals">0</strong></span>
+          </div>
+        </div>
+        <p id="sum-readout" class="readout" aria-live="polite"></p>
+        <div id="sum-chart" class="chart" role="group" data-i18n-aria="history.summary.chartLabel"></div>
+      </div>
+
+      <div id="history-tools" class="history-tools" hidden>
+        <input id="history-search" type="search" autocomplete="off" data-i18n-placeholder="history.search" data-i18n-aria="history.search">
+        <small id="history-found" class="hint"></small>
+      </div>
+
+      <div id="history-list"></div>
+      <p id="history-nomatch" class="empty" data-i18n="history.noMatch" hidden>Nothing found.</p>
       <p id="history-empty" class="empty" data-i18n="history.empty">No meals yet. Analyzed meals will appear here.</p>
+      <button id="history-more" type="button" class="secondary more" data-i18n="history.showOlder" hidden>Show older</button>
       <button id="history-clear" type="button" class="danger" data-i18n="history.clear" hidden>Clear history</button>
     </section>
 
@@ -163,6 +193,14 @@
         <small class="hint" data-i18n-html="kt.proxyHint"></small>
         <button id="kt-test" type="button" class="secondary" data-i18n="kt.test">Check login</button>
         <p id="kt-test-status" class="status" role="status" aria-live="polite"></p>
+      </div>
+
+      <div class="card field-stack">
+        <label class="check-row">
+          <input id="location-toggle" type="checkbox">
+          <span data-i18n="settings.location">Save where the meal was eaten</span>
+        </label>
+        <small class="hint" data-i18n="settings.locationHint"></small>
       </div>
 
       <div class="card field-stack">

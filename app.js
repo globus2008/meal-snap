@@ -3,8 +3,7 @@ import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
 import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, ktSearch, rankCandidates, bestMatch, md5 } from './kt.js';
 
-const VERSION = '1.6.2';
-const HISTORY_MAX = 200;
+const VERSION = '1.7.0';
 const $ = (sel, root = document) => root.querySelector(sel);
 
 // ---------- storage (always guarded: private mode / blocked storage must not break the app) ----------
@@ -26,38 +25,87 @@ const saveSettings = () => store.set('ms.settings', settings);
 const currentKey = () => (settings.keys[settings.provider] || '').trim();
 const currentModel = () => (settings.models[settings.provider] || '').trim() || PROVIDERS[settings.provider].defaultModel;
 
-let history = store.get('ms.history', []);
-function saveHistory() {
-  history = history.slice(0, HISTORY_MAX);
-  photos.prune();
-  if (store.set('ms.history', history)) return;
-  // Storage full: drop thumbnails, then retry.
-  history.forEach((h) => { delete h.thumb; });
-  store.set('ms.history', history);
-}
+// History lives in IndexedDB (localStorage is too small for an ever-growing diary), with the
+// larger meal photos next to it. Nothing is ever deleted automatically: only by the user.
+let history = [];
+let historyInIdb = false; // false: IndexedDB unavailable, history kept in localStorage
 
-// Larger meal photos for the history, kept in IndexedDB (too big for localStorage), keyed by
-// history entry id. Every call is guarded: without IndexedDB the app falls back to the thumbnail.
-const photos = {
+const idb = {
   db: null,
   open() {
     this.db ??= new Promise((resolve, reject) => {
-      const req = indexedDB.open('meal-snap', 1);
-      req.onupgradeneeded = () => req.result.createObjectStore('photos');
-      req.onsuccess = () => resolve(req.result);
+      const req = indexedDB.open('meal-snap', 2);
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        if (!d.objectStoreNames.contains('photos')) d.createObjectStore('photos');
+        if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');
+      };
+      req.onsuccess = () => {
+        req.result.onversionchange = () => req.result.close(); // let a newer version upgrade
+        resolve(req.result);
+      };
       req.onerror = () => reject(req.error);
     });
     return this.db;
   },
+  // Rejects on any failure; callers decide whether that matters.
+  async run(storeName, mode, fn) {
+    const db = await this.open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, mode);
+      const req = fn(tx.objectStore(storeName));
+      tx.oncomplete = () => resolve(req?.result);
+      tx.onerror = tx.onabort = () => reject(tx.error);
+    });
+  },
+};
+
+async function loadHistory() {
+  const legacy = store.get('ms.history', null);
+  try {
+    let saved = await withTimeout(idb.run('meta', 'readonly', (s) => s.get('history')), 5000);
+    if (legacy?.length) {
+      // Moving over from localStorage (or entries saved there while IndexedDB was unavailable).
+      const ids = new Set((saved || []).map((h) => h.id));
+      saved = [...(saved || []), ...legacy.filter((h) => !ids.has(h.id))]
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+      await idb.run('meta', 'readwrite', (s) => s.put(saved, 'history'));
+    }
+    if (legacy) try { localStorage.removeItem('ms.history'); } catch { /* ignore */ }
+    history = saved || [];
+    historyInIdb = true;
+  } catch (e) {
+    console.warn('IndexedDB unavailable, history stays in localStorage', e);
+    history = legacy || [];
+  }
+}
+
+// Saves coalesce: while one write runs, further calls just mark the history dirty.
+let saving = null;
+let dirty = false;
+function saveHistory() {
+  dirty = true;
+  saving ??= (async () => {
+    while (dirty) {
+      dirty = false;
+      try {
+        if (historyInIdb) await idb.run('meta', 'readwrite', (s) => s.put(history, 'history'));
+        else if (!store.set('ms.history', history)) throw new Error('quota');
+      } catch (e) {
+        console.error('Saving history failed', e);
+        toast(t('toast.storageFull'));
+      }
+    }
+    saving = null;
+  })();
+}
+
+// Larger meal photos for the history, keyed by history entry id. Every call is guarded:
+// without IndexedDB the app falls back to the thumbnail.
+const photos = {
   async run(mode, fn) {
     try {
-      const db = await this.open();
-      return await new Promise((resolve, reject) => {
-        const tx = db.transaction('photos', mode);
-        const req = fn(tx.objectStore('photos'));
-        tx.oncomplete = () => resolve(req?.result);
-        tx.onerror = tx.onabort = () => reject(tx.error);
-      });
+      return await idb.run('photos', mode, fn);
     } catch (e) {
       console.warn('Photo storage unavailable', e);
       return undefined;
@@ -65,7 +113,7 @@ const photos = {
   },
   get: (id) => photos.run('readonly', (s) => s.get(id)),
   put: (id, blob) => photos.run('readwrite', (s) => s.put(blob, id)),
-  // Delete photos whose history entry is gone (trimmed, replaced or cleared).
+  // Delete photos whose history entry is gone (deleted or replaced).
   prune: () => photos.run('readwrite', (s) => {
     const keep = new Set(history.map((h) => h.id));
     s.openKeyCursor().onsuccess = (e) => {
@@ -147,8 +195,11 @@ function drawScaled(img, maxSide, quality) {
 const scaledDataUrl = (img, maxSide, quality) => drawScaled(img, maxSide, quality).toDataURL('image/jpeg', quality);
 const scaledBlob = (img, maxSide, quality) => new Promise((resolve) => drawScaled(img, maxSide, quality).toBlob(resolve, 'image/jpeg', quality));
 
-// EXIF DateTimeOriginal (local time) of a JPEG, or null. Reads only the first 128 KB.
-async function exifTakenAt(file) {
+// EXIF DateTimeOriginal (local time) and GPS position of a JPEG: { takenAt, coords }, each
+// null when missing. Reads only the first 128 KB. Phones often strip GPS from photos handed to a
+// browser, so coords are a bonus, not something to rely on.
+async function exifInfo(file) {
+  const none = { takenAt: null, coords: null };
   try {
     const v = new DataView(await file.slice(0, 128 * 1024).arrayBuffer());
     if (v.getUint16(0) !== 0xffd8) return null;
@@ -179,22 +230,65 @@ async function exifTakenAt(file) {
         let e = exifPtr >= 0 ? findTag(u32(exifPtr + 8), 0x9003) : -1; // DateTimeOriginal
         if (e < 0) e = findTag(ifd0, 0x0132); // DateTime
         const m = e >= 0 && ascii(e).match(/^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/);
-        return m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
+        const takenAt = m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
+        let coords = null;
+        try {
+          const gpsPtr = findTag(ifd0, 0x8825);
+          if (gpsPtr >= 0) {
+            const gps = u32(gpsPtr + 8);
+            // Degrees, minutes, seconds as three rationals; the N/S or E/W letter sits in the entry itself.
+            const dms = (tag) => {
+              const at = findTag(gps, tag);
+              if (at < 0) return NaN;
+              const off = u32(at + 8);
+              let r = 0;
+              for (let i = 0; i < 3; i++) {
+                const den = u32(off + i * 8 + 4);
+                r += (den ? u32(off + i * 8) / den : 0) / 60 ** i;
+              }
+              return r;
+            };
+            const ref = (tag) => { const at = findTag(gps, tag); return at < 0 ? '' : String.fromCharCode(v.getUint8(tiff + at + 8)); };
+            const lat = dms(2) * (ref(1) === 'S' ? -1 : 1);
+            const lon = dms(4) * (ref(3) === 'W' ? -1 : 1);
+            if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180 && (lat || lon)) coords = { lat, lon };
+          }
+        } catch { /* malformed GPS block */ }
+        return { takenAt, coords };
       }
       if (marker === 0xda) break; // image data starts, no EXIF
       p += 2 + size;
     }
   } catch { /* malformed EXIF */ }
-  return null;
+  return none;
 }
 
 // When the meal was eaten, for preselecting the meal of the day: the photo's EXIF time, else the
 // file date (gallery picks on Android), never in the future. A fresh camera shot gives "now".
-async function photoTakenAt(file) {
+async function photoMeta(file) {
   const now = Date.now();
-  const exif = await exifTakenAt(file);
-  if (exif && !Number.isNaN(exif.getTime()) && exif.getTime() <= now + 60000) return exif.getTime();
-  return file.lastModified && file.lastModified <= now ? file.lastModified : now;
+  const { takenAt: exif, coords } = await exifInfo(file);
+  const takenAt = exif && !Number.isNaN(exif.getTime()) && exif.getTime() <= now + 60000
+    ? exif.getTime()
+    : file.lastModified && file.lastModified <= now ? file.lastModified : now;
+  return { takenAt, coords };
+}
+
+const locationOn = () => settings.location !== false;
+
+// Where the meal was eaten: the photo's GPS, else, for a photo taken just now, the phone's
+// current position (asked in the background, never blocking the analysis).
+function locatePhoto(p, coords) {
+  if (!locationOn()) return;
+  if (coords) { p.coords = coords; return; }
+  if (Date.now() - p.takenAt > 30 * 60000 || !navigator.geolocation) return;
+  p.coordsPromise = new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: false, maximumAge: 10 * 60000, timeout: 15000 },
+    );
+  });
 }
 
 async function onPhotoChosen(file) {
@@ -202,13 +296,15 @@ async function onPhotoChosen(file) {
   try {
     const { img, url } = await loadImage(file);
     if (photo?.previewUrl) URL.revokeObjectURL(photo.previewUrl);
+    const meta = await photoMeta(file);
     photo = {
       base64: scaledDataUrl(img, 1024, 0.8).split(',')[1],
       thumb: scaledDataUrl(img, 120, 0.7),
       view: await scaledBlob(img, 900, 0.75),
       previewUrl: url,
-      takenAt: await photoTakenAt(file),
+      takenAt: meta.takenAt,
     };
+    locatePhoto(photo, meta.coords);
     $('#photo-preview').src = url;
     $('#photo-preview').hidden = false;
     $('#photo-empty').hidden = true;
@@ -326,12 +422,15 @@ async function analyze() {
     const prev = history.findIndex((h) => h.id === photo.entryId);
     if (prev >= 0) {
       if (history[prev].kt) current.kt = history[prev].kt;
+      if (history[prev].place) current.place = history[prev].place;
       history.splice(prev, 1);
     }
     photo.entryId = current.id;
     history.unshift(current);
     if (photo.view) await photos.put(current.id, photo.view);
     saveHistory();
+    if (prev >= 0) photos.prune();
+    attachPlace(current, photo);
     setStatus($('#status'), '');
     showResult();
   } catch (err) {
@@ -791,70 +890,331 @@ function wireVoice() {
   });
 }
 
+// ---------- place of the meal ----------
+
+// Coordinates become a readable name through OpenStreetMap's Nominatim (max 1 request per second,
+// so lookups run one at a time). Meals eaten at the same spot reuse the name already found.
+async function attachPlace(entry, p) {
+  if (entry.place) { resolvePlace(entry); return; }
+  if (!locationOn()) return;
+  const coords = p.coords || await p.coordsPromise;
+  if (!coords || entry.place || !history.includes(entry)) return;
+  entry.place = { lat: coords.lat, lon: coords.lon };
+  saveHistory();
+  resolvePlace(entry);
+}
+
+function distanceM(a, b) {
+  const rad = Math.PI / 180;
+  const x = (b.lon - a.lon) * rad * Math.cos(((a.lat + b.lat) / 2) * rad);
+  const y = (b.lat - a.lat) * rad;
+  return Math.hypot(x, y) * 6371000;
+}
+
+async function reverseGeocode({ lat, lon }) {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}&accept-language=${getLang()}`;
+  const res = await withTimeout(fetch(url), 10000);
+  if (!res.ok) throw new Error(`nominatim ${res.status}`);
+  const d = await res.json();
+  const a = d.address || {};
+  const town = a.city || a.town || a.village || a.municipality || a.suburb || '';
+  const street = a.road ? `${a.road}${a.house_number ? ` ${a.house_number}` : ''}` : '';
+  const poi = d.name && d.name !== town && d.name !== a.road ? d.name : '';
+  return [poi || street, town].filter(Boolean).join(', ')
+    || (d.display_name || '').split(',').slice(0, 2).join(',').trim()
+    || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+}
+
+const placeQueue = [];
+let placeBusy = false;
+let placeRetryAt = 0; // after a failed lookup, wait before trying again
+
+function resolvePlace(h) {
+  if (!h.place || h.place.name || placeQueue.includes(h) || Date.now() < placeRetryAt) return;
+  placeQueue.push(h);
+  pumpPlaces();
+}
+
+async function pumpPlaces() {
+  if (placeBusy) return;
+  placeBusy = true;
+  while (placeQueue.length) {
+    const h = placeQueue.shift();
+    if (!history.includes(h) || !h.place || h.place.name) continue;
+    const near = history.find((x) => x !== h && x.place?.name && distanceM(x.place, h.place) < 75);
+    try {
+      h.place.name = near ? near.place.name : await reverseGeocode(h.place);
+    } catch (e) {
+      // Offline or refused: stop for now; unnamed places are retried when History is shown.
+      console.warn('Place lookup failed', e);
+      placeQueue.length = 0;
+      placeRetryAt = Date.now() + 60000;
+      break;
+    }
+    saveHistory();
+    if ($('#view-history').classList.contains('active')) renderHistory();
+    if (!near) await new Promise((r) => setTimeout(r, 1100));
+  }
+  placeBusy = false;
+}
+
+const mapUrl = ({ lat, lon }) => `https://mapy.com/fnc/v1/showmap?mapset=basic&center=${lon},${lat}&zoom=17&marker=true`;
+
 // ---------- history view ----------
+
+let historyQuery = '';
+let historyDays = 30;   // day groups shown; "Show older" adds more
+let chartPick = null;   // day selected in the chart
+
+const locale = () => (getLang() === 'cs' ? 'cs-CZ' : 'en-US');
+const fold = (s) => (s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+const mealTime = (h) => new Date(h.takenAt || h.date).getTime();
+
+// The day and meal of the day an entry belongs to: as logged to KT, else from when it was eaten
+// (just after midnight still counts as the previous evening, the same rule as the KT preselect).
+function mealSlot(h) {
+  if (h.kt?.date) return { day: h.kt.date, mealId: h.kt.mealId };
+  const { date, mealId } = defaultMeal(mealTime(h));
+  return { day: isoDate(date), mealId };
+}
+
+function entryTotals(h) {
+  return h.items.reduce((a, it) => {
+    const x = itemTotals(it);
+    return { kcal: a.kcal + x.kcal, p: a.p + x.p, c: a.c + x.c, f: a.f + x.f };
+  }, { kcal: 0, p: 0, c: 0, f: 0 });
+}
+
+const dayDate = (day) => new Date(`${day}T12:00`);
+function dayLabel(day, short = false) {
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  if (!short && day === isoDate(new Date())) return t('history.today');
+  if (!short && day === isoDate(y)) return t('history.yesterday');
+  const d = dayDate(day);
+  const opts = { weekday: 'short', day: 'numeric', month: 'numeric' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return new Intl.DateTimeFormat(locale(), opts).format(d);
+}
+
+function el(tag, className, text) {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+const PIN_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Z"/></svg>';
+const TRASH_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12ZM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4Z"/></svg>';
+
+function placeLink(h) {
+  if (!h.place) return null;
+  const a = el('a', 'place');
+  a.href = mapUrl(h.place);
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.innerHTML = PIN_SVG;
+  a.append(el('span', null, h.place.name || t('history.placeLoading')));
+  return a;
+}
+
+function historyRow(e, timeFmt) {
+  const { h } = e;
+  const li = el('li', 'card');
+  li.dataset.id = h.id;
+  li.tabIndex = 0;
+  li.setAttribute('role', 'button');
+  let media;
+  if (h.thumb) {
+    media = el('button', 'thumb');
+    media.type = 'button';
+    media.setAttribute('aria-label', t('history.showPhoto'));
+    media.appendChild(Object.assign(document.createElement('img'), { src: h.thumb, alt: '' }));
+  } else {
+    media = el('div', 'ph');
+  }
+  const meta = el('div', 'meta');
+  const small = el('small', null, `${timeFmt.format(new Date(e.time))} · ${mealName(e.mealId)} · ${t('history.items', { n: h.items.length })}`);
+  if (h.kt) small.append(' ', el('span', 'kt-badge', t('history.ktLogged')));
+  meta.append(el('strong', null, h.dish || t('history.untitled')), small);
+  const place = placeLink(h);
+  if (place) meta.append(place);
+  const side = el('div', 'side');
+  const del = el('button', 'icon-btn small delete');
+  del.type = 'button';
+  del.innerHTML = TRASH_SVG;
+  del.setAttribute('aria-label', t('history.delete'));
+  del.title = t('history.delete');
+  side.append(el('span', 'kc', `${fmt(e.totals.kcal)} kcal`), del);
+  li.append(media, meta, side);
+  return li;
+}
+
+function lastDays(n) {
+  const out = [];
+  const d = new Date();
+  for (let i = 0; i < n; i++) { out.push(isoDate(d)); d.setDate(d.getDate() - 1); }
+  return out;
+}
+
+function renderSummary(all) {
+  const byDay = new Map();
+  for (const e of all) byDay.set(e.day, (byDay.get(e.day) || 0) + e.totals.kcal);
+  // Averages count only days with a record: a day without photos is unknown, not zero.
+  const avg = (n) => {
+    const vals = lastDays(n).filter((k) => byDay.has(k)).map((k) => byDay.get(k));
+    return vals.length ? { kcal: vals.reduce((a, b) => a + b, 0) / vals.length, n: vals.length } : null;
+  };
+  const stat = (id, a) => {
+    $(`#${id}`).textContent = a ? fmt(a.kcal) : '–';
+    $(`#${id}-days`).textContent = a ? t('history.summary.days', { n: a.n }) : t('history.summary.noData');
+  };
+  stat('sum-avg7', avg(7));
+  stat('sum-avg30', avg(30));
+  const week = new Set(lastDays(7));
+  $('#sum-meals').textContent = fmt(all.filter((e) => week.has(e.day)).length);
+
+  // Last 14 days, oldest on the left, bars scaled to the highest day.
+  const last = lastDays(14).reverse();
+  const max = Math.max(1, ...last.map((k) => byDay.get(k) || 0));
+  const chart = $('#sum-chart');
+  chart.textContent = '';
+  const today = isoDate(new Date());
+  for (const k of last) {
+    const v = byDay.get(k) || 0;
+    const col = el('button', 'bar-col');
+    col.type = 'button';
+    col.dataset.day = k;
+    col.classList.toggle('picked', chartPick === k);
+    col.classList.toggle('today', k === today);
+    col.setAttribute('aria-label', `${dayLabel(k, true)}: ${v ? `${fmt(v)} kcal` : t('history.summary.noRecord')}`);
+    const bar = el('span', v ? 'bar' : 'bar none');
+    if (v) bar.style.height = `${Math.max(3, (v / max) * 100)}%`;
+    const plot = el('span', 'plot');
+    plot.append(bar);
+    col.append(plot, el('span', 'bar-label', String(dayDate(k).getDate())));
+    chart.append(col);
+  }
+  const picked = last.includes(chartPick) ? chartPick : null;
+  $('#sum-readout').textContent = picked
+    ? `${dayLabel(picked, true)}: ${byDay.get(picked) ? `${fmt(byDay.get(picked))} kcal` : t('history.summary.noRecord')}`
+    : t('history.summary.chart', { max: fmt(max) });
+}
 
 function renderHistory() {
   const list = $('#history-list');
   list.textContent = '';
-  $('#history-empty').hidden = history.length > 0;
-  $('#history-clear').hidden = history.length === 0;
-  const dateFmt = new Intl.DateTimeFormat(getLang() === 'cs' ? 'cs-CZ' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' });
-  history.forEach((h) => {
-    const kcal = h.items.reduce((a, it) => a + itemTotals(it).kcal, 0);
-    const li = document.createElement('li');
-    li.className = 'card';
-    li.dataset.id = h.id;
-    li.tabIndex = 0;
-    li.setAttribute('role', 'button');
-    let media;
-    if (h.thumb) {
-      media = document.createElement('button');
-      media.type = 'button';
-      media.className = 'thumb';
-      media.setAttribute('aria-label', t('history.showPhoto'));
-      media.appendChild(Object.assign(document.createElement('img'), { src: h.thumb, alt: '' }));
-    } else {
-      media = Object.assign(document.createElement('div'), { className: 'ph' });
+  const has = history.length > 0;
+  $('#history-empty').hidden = has;
+  $('#history-clear').hidden = !has;
+  $('#history-tools').hidden = !has;
+  $('#history-summary').hidden = !has;
+  $('#history-more').hidden = true;
+  $('#history-nomatch').hidden = true;
+  if (!has) return;
+
+  const all = history.map((h) => ({ h, time: mealTime(h), ...mealSlot(h), totals: entryTotals(h) }));
+  renderSummary(all);
+
+  const q = fold(historyQuery.trim());
+  const found = q ? all.filter(({ h }) => fold(h.dish).includes(q) || h.items.some((it) => fold(it.name).includes(q))) : all;
+  $('#history-found').textContent = q ? t('history.found', { n: found.length }) : '';
+  $('#history-nomatch').hidden = found.length > 0;
+
+  const groups = new Map();
+  for (const e of found.sort((a, b) => b.time - a.time)) {
+    if (!groups.has(e.day)) groups.set(e.day, []);
+    groups.get(e.day).push(e);
+  }
+  const days = [...groups.keys()].sort().reverse();
+  const timeFmt = new Intl.DateTimeFormat(locale(), { hour: 'numeric', minute: '2-digit' });
+  for (const day of days.slice(0, historyDays)) {
+    const entries = groups.get(day);
+    const sum = entries.reduce((a, e) => ({
+      kcal: a.kcal + e.totals.kcal, p: a.p + e.totals.p, c: a.c + e.totals.c, f: a.f + e.totals.f,
+    }), { kcal: 0, p: 0, c: 0, f: 0 });
+    const sec = el('section', 'day');
+    sec.id = `day-${day}`;
+    const head = el('h2', 'day-head');
+    const totals = el('span', 'day-totals');
+    totals.append(el('strong', null, `${fmt(sum.kcal)} kcal`),
+      el('small', null, `${t('macro.p')} ${fmt(sum.p)} · ${t('macro.c')} ${fmt(sum.c)} · ${t('macro.f')} ${fmt(sum.f)} g`));
+    head.append(el('span', 'day-title', dayLabel(day)), totals);
+    const ul = el('ul', 'history');
+    for (const e of entries) {
+      ul.append(historyRow(e, timeFmt));
+      if (e.h.place && !e.h.place.name && navigator.onLine !== false) resolvePlace(e.h);
     }
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-    const strong = document.createElement('strong');
-    strong.textContent = h.dish || t('history.untitled');
-    const small = document.createElement('small');
-    small.textContent = `${dateFmt.format(new Date(h.date))} · ${t('history.items', { n: h.items.length })}`;
-    meta.append(strong, small);
-    const kc = document.createElement('span');
-    kc.className = 'kc';
-    kc.textContent = `${fmt(kcal)} kcal`;
-    li.append(media, meta, kc);
-    list.appendChild(li);
-  });
+    sec.append(head, ul);
+    list.append(sec);
+  }
+  $('#history-more').hidden = days.length <= historyDays;
+}
+
+// Deletes one meal (and its photo) after the user confirms. Nothing else ever removes meals.
+function deleteEntry(id) {
+  const h = history.find((x) => x.id === id);
+  if (!h || !confirm(t('history.confirmDelete', { dish: h.dish || t('history.untitled') }))) return false;
+  history = history.filter((x) => x !== h);
+  saveHistory();
+  photos.prune();
+  if (current?.id === id) resetComposer();
+  return true;
 }
 
 function wireHistory() {
+  const find = (li) => history.find((x) => x.id === li.dataset.id);
   const open = (li) => {
-    const h = history.find((x) => x.id === li.dataset.id);
+    const h = find(li);
     if (!h) return;
     current = h;
     showView('snap');
     showResult();
   };
   $('#history-list').addEventListener('click', (e) => {
-    const li = e.target.closest('li');
+    if (e.target.closest('a')) return; // the place opens the map
+    const li = e.target.closest('li[data-id]');
     if (!li) return;
-    if (e.target.closest('.thumb')) showPhoto(history.find((x) => x.id === li.dataset.id));
+    if (e.target.closest('.delete')) { if (deleteEntry(li.dataset.id)) renderHistory(); }
+    else if (e.target.closest('.thumb')) showPhoto(find(li));
     else open(li);
   });
   $('#history-list').addEventListener('keydown', (e) => {
-    if (e.target.tagName !== 'LI') return; // the photo button handles its own keys
+    if (!e.target.matches('li[data-id]')) return; // buttons and links handle their own keys
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e.target); }
+  });
+  $('#history-search').addEventListener('input', (e) => {
+    historyQuery = e.target.value;
+    historyDays = 30;
+    renderHistory();
+  });
+  $('#history-more').addEventListener('click', () => {
+    historyDays += 30;
+    renderHistory();
+  });
+  // The first tap on a bar shows its value, a second tap jumps to that day.
+  $('#sum-chart').addEventListener('click', (e) => {
+    const col = e.target.closest('.bar-col');
+    if (!col) return;
+    const day = col.dataset.day;
+    if (chartPick === day) {
+      document.getElementById(`day-${day}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    chartPick = day;
+    renderHistory();
+    document.querySelector(`#sum-chart [data-day="${day}"]`)?.focus();
   });
   $('#history-clear').addEventListener('click', () => {
     if (!confirm(t('history.confirmClear'))) return;
     history = [];
     saveHistory();
+    photos.prune();
     renderHistory();
     if (current) resetComposer();
+  });
+  $('#delete-current').addEventListener('click', () => {
+    if (current) deleteEntry(current.id);
   });
 }
 
@@ -867,8 +1227,9 @@ async function showPhoto(h) {
   const img = $('#lightbox-img');
   closePhoto();
   img.src = h.thumb;
-  const dateFmt = new Intl.DateTimeFormat(getLang() === 'cs' ? 'cs-CZ' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' });
-  $('#lightbox-caption').textContent = `${h.dish || t('history.untitled')} · ${dateFmt.format(new Date(h.takenAt || h.date))}`;
+  const dateFmt = new Intl.DateTimeFormat(locale(), { dateStyle: 'medium', timeStyle: 'short' });
+  $('#lightbox-caption').textContent = [h.dish || t('history.untitled'), dateFmt.format(new Date(h.takenAt || h.date)), h.place?.name]
+    .filter(Boolean).join(' · ');
   box.showModal();
   const blob = await photos.get(h.id);
   if (blob && box.open) {
@@ -964,6 +1325,12 @@ function wireSettings() {
       setStatus(st, errorMessage(err), 'error');
     }
   });
+  const loc = $('#location-toggle');
+  loc.checked = locationOn();
+  loc.addEventListener('change', () => {
+    settings.location = loc.checked;
+    saveSettings();
+  });
   const sel = $('#lang-select');
   for (const [code, name] of Object.entries(LANGS)) sel.appendChild(Object.assign(document.createElement('option'), { value: code, textContent: name }));
   sel.addEventListener('change', () => changeLang(sel.value));
@@ -1041,6 +1408,10 @@ async function init() {
   wireKtSettings();
   $('#kt-send').addEventListener('click', sendToKt);
   await changeLang(initialLang());
+  await loadHistory();
+  photos.prune();
+  navigator.storage?.persist?.().catch(() => {});
+  if ($('#view-history').classList.contains('active')) renderHistory();
 
   if (!currentKey()) showView('settings');
 
