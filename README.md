@@ -6,7 +6,7 @@ Take a photo of a meal and get it broken down into individual foods with estimat
 - English and Czech UI.
 - Pick an AI provider: **Google Gemini** (free tier), **Anthropic Claude** or **OpenAI** (paid). Each user enters their own API key, which is stored only in their browser.
 - Edit the grams and recalculate calories, copy single food names or the whole list, and keep a history grouped by day with daily totals, search, the place where you ate (from the photo or phone location, named via OpenStreetMap) and photos you can tap to enlarge. Meals are only ever deleted by hand.
-- The Overview tab shows 7- and 30-day calorie averages, a 14-day chart and a protein / carb / fat breakdown compared with the recommended share of energy (EFSA/WHO), so an excess of fat or too little protein stands out.
+- The Overview tab shows 7- and 30-day calorie averages, a 14-day chart and a protein / carb / fat breakdown compared with the recommended share of energy (28 / 43 / 29 % as in Kalorické tabulky), so an excess of fat or too little protein stands out.
 - Voice note: live dictation where the browser supports it. In iOS home-screen apps the recording is transcribed by the AI provider instead.
 - Log the breakdown straight into the *Kalorické tabulky* food diary (one-way), with the date and meal of the day (breakfast … second dinner) preselected from the time of the photo. This needs a small proxy, see below.
 

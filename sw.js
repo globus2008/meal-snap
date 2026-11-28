@@ -1,5 +1,5 @@
 // Offline cache for the app shell. Bump CACHE when shipping changes so clients refresh.
-const CACHE = 'meal-snap-v18';
+const CACHE = 'meal-snap-v19';
 const ASSETS = [
   './',
   'index.html',

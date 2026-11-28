@@ -3,7 +3,7 @@ import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
 import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, ktSearch, rankCandidates, bestMatch, md5 } from './kt.js';
 
-const VERSION = '1.8.0';
+const VERSION = '1.8.1';
 const $ = (sel, root = document) => root.querySelector(sel);
 
 // ---------- storage (always guarded: private mode / blocked storage must not break the app) ----------
@@ -1113,9 +1113,14 @@ function renderSummary(all, days) {
     : t('overview.summary.chart', { max: fmt(max) });
 }
 
-// Recommended share of energy (%) from each macronutrient for adults (EFSA reference intake
-// ranges for carbs and fat; 10-20 % is the usual protein range for a mixed diet).
-const MACRO_REF = { p: [10, 20], c: [45, 60], f: [20, 35] };
+// Recommended share of energy (%) from each macronutrient, as Kalorické tabulky sets it
+// (e.g. 139 g protein, 213 g carbs, 62.8 g fat = 28 / 43 / 29 %; the same split for any weight,
+// height or sex). A share within 5 points of the target counts as on target.
+const MACRO_TARGET = { p: 28, c: 43, f: 29 };
+const MACRO_TOLERANCE = 5;
+const MACRO_REF = Object.fromEntries(
+  Object.entries(MACRO_TARGET).map(([m, v]) => [m, [v - MACRO_TOLERANCE, v + MACRO_TOLERANCE]]),
+);
 const KCAL_PER_G = { p: 4, c: 4, f: 9 };
 const TRACK_MAX = 70; // the bars show 0-70 % of energy
 
@@ -1154,7 +1159,7 @@ function renderMacros(days) {
     const grams = `${fmt(sum[m] / keys.length)} ${t('overview.macros.perDay')}`;
     const row = el('div', 'macro-row');
     row.setAttribute('role', 'img');
-    row.setAttribute('aria-label', `${name}: ${grams}, ${t('overview.macros.share', { pct: fmt(pct), min: lo, max: hi })}, ${t(`overview.macros.${state}`)}`);
+    row.setAttribute('aria-label', `${name}: ${grams}, ${t('overview.macros.share', { pct: fmt(pct), target: MACRO_TARGET[m], min: lo, max: hi })}, ${t(`overview.macros.${state}`)}`);
     const line = el('div', 'macro-line');
     const pctEl = el('span', 'macro-pct');
     pctEl.append(el('strong', null, `${fmt(pct)} %`), ' ', el('span', `macro-state ${state}`, t(`overview.macros.${state}`)));
@@ -1166,7 +1171,7 @@ function renderMacros(days) {
     const mark = el('span', `macro-mark ${state}`);
     mark.style.left = `${(Math.min(pct, TRACK_MAX) / TRACK_MAX) * 100}%`;
     track.append(band, mark);
-    row.append(line, track, el('small', 'macro-ref', t('overview.macros.ref', { min: lo, max: hi })));
+    row.append(line, track, el('small', 'macro-ref', t('overview.macros.ref', { target: MACRO_TARGET[m], min: lo, max: hi })));
     rows.append(row);
   }
 
