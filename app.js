@@ -3,7 +3,7 @@ import { LANGS, initialLang, setLang, getLang, t, applyI18n } from './i18n.js';
 import { canLiveDictate, canRecord, startDictation, startRecording, toWav16k, withTimeout } from './voice.js';
 import { MEALS, KtError, DEFAULT_PROXY, ktProxy, ktConfigured, defaultMeal, isoDate, ktTest, ktLog, ktSearch, rankCandidates, bestMatch, md5 } from './kt.js';
 
-const VERSION = '1.8.1';
+const VERSION = '1.9.0';
 const $ = (sel, root = document) => root.querySelector(sel);
 
 // ---------- storage (always guarded: private mode / blocked storage must not break the app) ----------
@@ -1113,14 +1113,18 @@ function renderSummary(all, days) {
     : t('overview.summary.chart', { max: fmt(max) });
 }
 
-// Recommended share of energy (%) from each macronutrient, as Kalorické tabulky sets it
-// (e.g. 139 g protein, 213 g carbs, 62.8 g fat = 28 / 43 / 29 %; the same split for any weight,
-// height or sex). A share within 5 points of the target counts as on target.
-const MACRO_TARGET = { p: 28, c: 43, f: 29 };
+// Recommended share of energy (%) from each macronutrient per goal, independent of weight,
+// height, age or sex. "lose" is the split Kalorické tabulky sets for weight loss (e.g. 139 g
+// protein, 213 g carbs, 62.8 g fat = 28 / 43 / 29 %); "maintain" is a balanced split within the
+// EFSA/WHO ranges; "gain" adds protein and carbs for building muscle. A share within 5 points of
+// the target counts as on target.
+const GOALS = {
+  lose: { p: 28, c: 43, f: 29 },
+  maintain: { p: 20, c: 50, f: 30 },
+  gain: { p: 25, c: 50, f: 25 },
+};
 const MACRO_TOLERANCE = 5;
-const MACRO_REF = Object.fromEntries(
-  Object.entries(MACRO_TARGET).map(([m, v]) => [m, [v - MACRO_TOLERANCE, v + MACRO_TOLERANCE]]),
-);
+const currentGoal = () => (GOALS[settings.goal] ? settings.goal : 'lose');
 const KCAL_PER_G = { p: 4, c: 4, f: 9 };
 const TRACK_MAX = 70; // the bars show 0-70 % of energy
 
@@ -1143,6 +1147,10 @@ function renderMacros(days) {
   }, { p: 0, c: 0, f: 0 });
   const energy = { p: sum.p * KCAL_PER_G.p, c: sum.c * KCAL_PER_G.c, f: sum.f * KCAL_PER_G.f };
   const total = energy.p + energy.c + energy.f;
+  const goal = currentGoal();
+  const target = GOALS[goal];
+  $('#macro-goal').textContent = t('overview.macros.goal', { goal: t(`settings.goal.${goal}`) });
+  $('#macro-source').textContent = t(`overview.macros.source.${goal}`, { ...target, tol: MACRO_TOLERANCE });
   $('#macro-days').textContent = keys.length ? t('overview.summary.days', { n: keys.length }) : '';
   if (!keys.length || total <= 0) {
     verdict.textContent = t('overview.macros.noData', { n: macroPeriod });
@@ -1152,14 +1160,14 @@ function renderMacros(days) {
   const off = { low: [], high: [] };
   for (const m of ['p', 'c', 'f']) {
     const pct = (energy[m] / total) * 100;
-    const [lo, hi] = MACRO_REF[m];
+    const [lo, hi] = [target[m] - MACRO_TOLERANCE, target[m] + MACRO_TOLERANCE];
     const state = pct < lo ? 'low' : pct > hi ? 'high' : 'ok';
     if (state !== 'ok') off[state].push(t(`overview.macros.gen.${m}`));
     const name = t(`overview.macros.name.${m}`);
     const grams = `${fmt(sum[m] / keys.length)} ${t('overview.macros.perDay')}`;
     const row = el('div', 'macro-row');
     row.setAttribute('role', 'img');
-    row.setAttribute('aria-label', `${name}: ${grams}, ${t('overview.macros.share', { pct: fmt(pct), target: MACRO_TARGET[m], min: lo, max: hi })}, ${t(`overview.macros.${state}`)}`);
+    row.setAttribute('aria-label', `${name}: ${grams}, ${t('overview.macros.share', { pct: fmt(pct), target: target[m], min: lo, max: hi })}, ${t(`overview.macros.${state}`)}`);
     const line = el('div', 'macro-line');
     const pctEl = el('span', 'macro-pct');
     pctEl.append(el('strong', null, `${fmt(pct)} %`), ' ', el('span', `macro-state ${state}`, t(`overview.macros.${state}`)));
@@ -1171,7 +1179,7 @@ function renderMacros(days) {
     const mark = el('span', `macro-mark ${state}`);
     mark.style.left = `${(Math.min(pct, TRACK_MAX) / TRACK_MAX) * 100}%`;
     track.append(band, mark);
-    row.append(line, track, el('small', 'macro-ref', t('overview.macros.ref', { target: MACRO_TARGET[m], min: lo, max: hi })));
+    row.append(line, track, el('small', 'macro-ref', t('overview.macros.ref', { target: target[m], min: lo, max: hi })));
     rows.append(row);
   }
 
@@ -1438,9 +1446,27 @@ function wireSettings() {
     settings.location = loc.checked;
     saveSettings();
   });
+  const goalSel = $('#goal-select');
+  goalSel.addEventListener('change', () => {
+    settings.goal = goalSel.value;
+    saveSettings();
+    renderGoals();
+  });
+  renderGoals();
   const sel = $('#lang-select');
   for (const [code, name] of Object.entries(LANGS)) sel.appendChild(Object.assign(document.createElement('option'), { value: code, textContent: name }));
   sel.addEventListener('change', () => changeLang(sel.value));
+}
+
+function renderGoals() {
+  const goalSel = $('#goal-select');
+  const goal = currentGoal();
+  goalSel.textContent = '';
+  for (const id of Object.keys(GOALS)) {
+    goalSel.appendChild(Object.assign(document.createElement('option'), { value: id, textContent: t(`settings.goal.${id}`) }));
+  }
+  goalSel.value = goal;
+  $('#goal-hint').textContent = t('settings.goalHint', GOALS[goal]);
 }
 
 // ---------- navigation + language ----------
@@ -1464,6 +1490,7 @@ async function changeLang(code) {
   $('#lang-toggle').textContent = getLang() === 'en' ? 'CS' : 'EN';
   renderProviders();
   renderProviderFields();
+  renderGoals();
   wireKtSettings.refresh?.();
   if (current && !$('#result').hidden) showResult();
   if ($('#view-history').classList.contains('active')) renderHistory();

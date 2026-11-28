@@ -166,10 +166,10 @@
             <button type="button" data-period="30" data-i18n="overview.macros.period30">30 days</button>
           </div>
         </div>
-        <small id="macro-days" class="stat-note"></small>
+        <small class="stat-note"><span id="macro-goal"></span> <span id="macro-days"></span></small>
         <div id="macro-rows" class="macro-rows"></div>
         <p id="macro-verdict" class="macro-verdict" aria-live="polite"></p>
-        <small class="hint" data-i18n="overview.macros.source"></small>
+        <small id="macro-source" class="hint"></small>
       </div>
 
       <p id="overview-empty" class="empty" data-i18n="overview.empty">No meals yet.</p>
@@ -214,6 +214,12 @@
         <small class="hint" data-i18n-html="kt.proxyHint"></small>
         <button id="kt-test" type="button" class="secondary" data-i18n="kt.test">Check login</button>
         <p id="kt-test-status" class="status" role="status" aria-live="polite"></p>
+      </div>
+
+      <div class="card field-stack">
+        <label for="goal-select" class="label" data-i18n="settings.goal">Goal</label>
+        <select id="goal-select"></select>
+        <small id="goal-hint" class="hint"></small>
       </div>
 
       <div class="card field-stack">
